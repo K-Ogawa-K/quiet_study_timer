@@ -17,6 +17,7 @@ class FocusTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final focus = ref.watch(focusControllerProvider);
+    final settings = ref.watch(settingsControllerProvider);
     final subjects = ref.watch(subjectsProvider);
     final todayTotalSeconds = ref.watch(todayTotalSecondsProvider);
     final selectedSubject = _subjectById(subjects, focus.selectedSubjectId);
@@ -38,6 +39,7 @@ class FocusTab extends ConsumerWidget {
             else if (focus.lastCompletedRecord != null)
               _CompletedSessionView(
                 record: focus.lastCompletedRecord!,
+                quiet: settings.libraryModeEnabled,
                 subject: _subjectById(
                   subjects,
                   focus.lastCompletedRecord!.subjectId,
@@ -159,10 +161,15 @@ class _ActiveSessionView extends ConsumerWidget {
 }
 
 class _CompletedSessionView extends ConsumerWidget {
-  const _CompletedSessionView({required this.record, required this.subject});
+  const _CompletedSessionView({
+    required this.record,
+    required this.subject,
+    required this.quiet,
+  });
 
   final StudyRecord record;
   final StudySubject subject;
+  final bool quiet;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -171,11 +178,13 @@ class _CompletedSessionView extends ConsumerWidget {
 
     return Column(
       children: [
-        _SessionLabel(subject: subject, label: '記録しました'),
-        const SizedBox(height: 42),
+        _SessionLabel(subject: subject, label: quiet ? '完了' : '記録しました'),
+        SizedBox(height: quiet ? 30 : 42),
         Text(
           formatDurationCompact(record.durationSeconds),
-          style: theme.textTheme.headlineLarge,
+          style: quiet
+              ? theme.textTheme.titleLarge
+              : theme.textTheme.headlineLarge,
         ),
         const SizedBox(height: 8),
         Text(

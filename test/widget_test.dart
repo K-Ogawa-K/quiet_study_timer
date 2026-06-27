@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:quiet_study_timer/app/quiet_study_app.dart';
+import 'package:quiet_study_timer/models/app_settings.dart';
 import 'package:quiet_study_timer/state/study_providers.dart';
 
 void main() {
@@ -133,6 +134,24 @@ void main() {
     expect(find.text('英語A'), findsWidgets);
   });
 
+  testWidgets('shows the no vibration pattern option in settings', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const ProviderScope(child: QuietStudyApp()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('設定').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('振動パターン'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('なし'), findsOneWidget);
+    expect(find.text('短く'), findsWidgets);
+    expect(find.text('二度'), findsOneWidget);
+    expect(find.text('ゆっくり'), findsOneWidget);
+  });
+
   test('subjects and records persist through the repository', () async {
     final startedAt = DateTime.now().subtract(const Duration(minutes: 25));
     final endedAt = DateTime.now();
@@ -168,6 +187,30 @@ void main() {
     expect(
       secondContainer.read(sevenDayAnalyticsProvider).totalSeconds,
       greaterThan(0),
+    );
+  });
+
+  test('vibration pattern setting persists', () async {
+    final firstContainer = ProviderContainer();
+
+    firstContainer
+        .read(settingsControllerProvider.notifier)
+        .setVibrationPattern(VibrationPattern.none);
+
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    firstContainer.dispose();
+
+    final secondContainer = ProviderContainer();
+    addTearDown(secondContainer.dispose);
+
+    secondContainer.read(settingsControllerProvider);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      secondContainer.read(settingsControllerProvider).vibrationPattern,
+      VibrationPattern.none,
     );
   });
 }

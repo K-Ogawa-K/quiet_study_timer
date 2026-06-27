@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum VibrationPattern { short, doublePulse, slow }
+enum VibrationPattern { none, short, doublePulse, slow }
 
 extension ThemeModeLabel on ThemeMode {
   String get label {
@@ -15,6 +15,7 @@ extension ThemeModeLabel on ThemeMode {
 extension VibrationPatternLabel on VibrationPattern {
   String get label {
     return switch (this) {
+      VibrationPattern.none => 'なし',
       VibrationPattern.short => '短く',
       VibrationPattern.doublePulse => '二度',
       VibrationPattern.slow => 'ゆっくり',

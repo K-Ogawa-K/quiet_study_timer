@@ -11,6 +11,7 @@ import '../models/study_analytics.dart';
 import '../models/study_record.dart';
 import '../models/study_subject.dart';
 import '../repositories/study_data_repository.dart';
+import '../services/haptic_service.dart';
 
 const _uuid = Uuid();
 const _subjectColorPalette = [
@@ -33,6 +34,10 @@ const defaultStudySubjects = <StudySubject>[
 
 final studyDataRepositoryProvider = Provider<StudyDataRepository>((ref) {
   return SharedPreferencesStudyDataRepository();
+});
+
+final hapticServiceProvider = Provider<HapticService>((ref) {
+  return const SystemHapticService();
 });
 
 final subjectsProvider =
@@ -405,7 +410,11 @@ class FocusController extends Notifier<FocusState> {
 
     final now = DateTime.now();
     if (session.shouldComplete(now)) {
-      _completeSession(now, endedAt: session.expectedEndAt);
+      _completeSession(
+        now,
+        endedAt: session.expectedEndAt,
+        playCompletionHaptic: true,
+      );
       return;
     }
 
@@ -477,7 +486,11 @@ class FocusController extends Notifier<FocusState> {
     }
 
     if (session.shouldComplete(now)) {
-      _completeSession(now, endedAt: session.expectedEndAt);
+      _completeSession(
+        now,
+        endedAt: session.expectedEndAt,
+        playCompletionHaptic: true,
+      );
       return;
     }
 
@@ -497,14 +510,22 @@ class FocusController extends Notifier<FocusState> {
 
     final now = DateTime.now();
     if (session.shouldComplete(now)) {
-      _completeSession(now, endedAt: session.expectedEndAt);
+      _completeSession(
+        now,
+        endedAt: session.expectedEndAt,
+        playCompletionHaptic: true,
+      );
       return;
     }
 
     state = state.copyWith(now: now);
   }
 
-  void _completeSession(DateTime observedAt, {DateTime? endedAt}) {
+  void _completeSession(
+    DateTime observedAt, {
+    DateTime? endedAt,
+    bool playCompletionHaptic = false,
+  }) {
     final session = state.activeSession;
     if (session == null) {
       return;
@@ -535,6 +556,15 @@ class FocusController extends Notifier<FocusState> {
       clearActiveSession: true,
       lastCompletedRecord: record,
     );
+
+    if (playCompletionHaptic) {
+      final settings = ref.read(settingsControllerProvider);
+      unawaited(
+        ref
+            .read(hapticServiceProvider)
+            .playTimerCompletion(settings.vibrationPattern),
+      );
+    }
   }
 }
 
