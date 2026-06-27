@@ -10,6 +10,7 @@ import '../../state/study_providers.dart';
 import '../../utils/time_format.dart';
 
 const _presetSeconds = [5 * 60, 10 * 60, 25 * 60, 50 * 60];
+const _breakPresetSeconds = [60, 5 * 60, 10 * 60];
 
 class FocusTab extends ConsumerWidget {
   const FocusTab({super.key});
@@ -36,10 +37,16 @@ class FocusTab extends ConsumerWidget {
                 now: focus.now,
                 subject: _subjectById(subjects, focus.activeSession!.subjectId),
               )
+            else if (focus.lastCompletedBreakSeconds != null)
+              _CompletedBreakView(
+                seconds: focus.lastCompletedBreakSeconds!,
+                quiet: settings.libraryModeEnabled,
+              )
             else if (focus.lastCompletedRecord != null)
               _CompletedSessionView(
                 record: focus.lastCompletedRecord!,
                 quiet: settings.libraryModeEnabled,
+                selectedBreakSeconds: focus.selectedBreakSeconds,
                 subject: _subjectById(
                   subjects,
                   focus.lastCompletedRecord!.subjectId,
@@ -106,6 +113,7 @@ class _ReadySessionView extends ConsumerWidget {
         const SizedBox(height: 40),
         _PresetRow(
           selectedSeconds: focus.selectedPresetSeconds,
+          values: _presetSeconds,
           onSelected: controller.selectPreset,
         ),
         const SizedBox(height: 28),
@@ -130,11 +138,13 @@ class _ActiveSessionView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.read(focusControllerProvider.notifier);
     final isPaused = session.status == StudySessionStatus.paused;
-    final statusLabel = isPaused ? '一時停止' : '集中';
+    final isRest = session.kind == StudySessionKind.rest;
+    final title = isRest ? '休憩' : subject.name;
+    final statusLabel = isPaused ? '一時停止' : (isRest ? '休憩中' : '集中');
 
     return Column(
       children: [
-        _SessionLabel(subject: subject, label: statusLabel),
+        _SessionLabel(title: title, label: statusLabel),
         const SizedBox(height: 52),
         _TimeDisplay(seconds: session.displaySeconds(now)),
         const SizedBox(height: 44),
@@ -165,11 +175,13 @@ class _CompletedSessionView extends ConsumerWidget {
     required this.record,
     required this.subject,
     required this.quiet,
+    required this.selectedBreakSeconds,
   });
 
   final StudyRecord record;
   final StudySubject subject;
   final bool quiet;
+  final int selectedBreakSeconds;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -178,7 +190,7 @@ class _CompletedSessionView extends ConsumerWidget {
 
     return Column(
       children: [
-        _SessionLabel(subject: subject, label: quiet ? '完了' : '記録しました'),
+        _SessionLabel(title: subject.name, label: quiet ? '完了' : '記録しました'),
         SizedBox(height: quiet ? 30 : 42),
         Text(
           formatDurationCompact(record.durationSeconds),
@@ -192,6 +204,56 @@ class _CompletedSessionView extends ConsumerWidget {
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
+        ),
+        const SizedBox(height: 34),
+        _PresetRow(
+          selectedSeconds: selectedBreakSeconds,
+          values: _breakPresetSeconds,
+          onSelected: controller.selectBreakPreset,
+        ),
+        const SizedBox(height: 22),
+        Row(
+          children: [
+            Expanded(
+              child: _SecondaryButton(
+                label: '休憩する',
+                onPressed: controller.startBreak,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _PrimaryButton(
+                label: 'もう一度',
+                onPressed: controller.startAgain,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _CompletedBreakView extends ConsumerWidget {
+  const _CompletedBreakView({required this.seconds, required this.quiet});
+
+  final int seconds;
+  final bool quiet;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final controller = ref.read(focusControllerProvider.notifier);
+    final theme = Theme.of(context);
+
+    return Column(
+      children: [
+        _SessionLabel(title: '休憩', label: quiet ? '完了' : '休憩完了'),
+        SizedBox(height: quiet ? 30 : 42),
+        Text(
+          formatDurationCompact(seconds),
+          style: quiet
+              ? theme.textTheme.titleLarge
+              : theme.textTheme.headlineLarge,
         ),
         const SizedBox(height: 42),
         Row(
@@ -217,9 +279,9 @@ class _CompletedSessionView extends ConsumerWidget {
 }
 
 class _SessionLabel extends StatelessWidget {
-  const _SessionLabel({required this.subject, required this.label});
+  const _SessionLabel({required this.title, required this.label});
 
-  final StudySubject subject;
+  final String title;
   final String label;
 
   @override
@@ -227,7 +289,7 @@ class _SessionLabel extends StatelessWidget {
     final theme = Theme.of(context);
     return Column(
       children: [
-        Text(subject.name, style: theme.textTheme.titleMedium),
+        Text(title, style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
           label,
@@ -297,16 +359,21 @@ class _TimeDisplay extends StatelessWidget {
 }
 
 class _PresetRow extends StatelessWidget {
-  const _PresetRow({required this.selectedSeconds, required this.onSelected});
+  const _PresetRow({
+    required this.selectedSeconds,
+    required this.values,
+    required this.onSelected,
+  });
 
   final int selectedSeconds;
+  final List<int> values;
   final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        for (final seconds in _presetSeconds) ...[
+        for (final seconds in values) ...[
           Expanded(
             child: _PresetButton(
               seconds: seconds,
@@ -314,7 +381,7 @@ class _PresetRow extends StatelessWidget {
               onPressed: () => onSelected(seconds),
             ),
           ),
-          if (seconds != _presetSeconds.last) const SizedBox(width: 8),
+          if (seconds != values.last) const SizedBox(width: 8),
         ],
       ],
     );

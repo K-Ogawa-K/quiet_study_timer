@@ -70,6 +70,62 @@ void main() {
     expect(find.text('1分未満'), findsWidgets);
   });
 
+  testWidgets('starts and finishes a break without adding a study record', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const QuietStudyApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('開始'));
+    await tester.pump();
+    await tester.tap(find.text('終了'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(recordsControllerProvider), hasLength(1));
+    expect(find.text('休憩する'), findsOneWidget);
+    expect(find.text('もう一度'), findsOneWidget);
+
+    await tester.tap(find.text('1分'));
+    await tester.pump();
+    await tester.tap(find.text('休憩する'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('休憩中'), findsOneWidget);
+    expect(find.text('01:00'), findsOneWidget);
+
+    await tester.tap(find.text('終了'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('休憩完了'), findsOneWidget);
+    expect(find.text('閉じる'), findsOneWidget);
+    expect(find.text('もう一度'), findsOneWidget);
+    expect(container.read(recordsControllerProvider), hasLength(1));
+  });
+
+  test('break sessions are not saved as study records', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final controller = container.read(focusControllerProvider.notifier);
+    controller.selectBreakPreset(60);
+    controller.startBreak();
+    controller.finish();
+
+    expect(container.read(recordsControllerProvider), isEmpty);
+    expect(
+      container.read(focusControllerProvider).lastCompletedBreakSeconds,
+      greaterThan(0),
+    );
+  });
+
   testWidgets('adds a manual record from the records tab', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: QuietStudyApp()));
     await tester.pumpAndSettle();

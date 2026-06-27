@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 enum StudySessionMode { timer, stopwatch }
 
+enum StudySessionKind { focus, rest }
+
 enum StudySessionStatus { running, paused, completed }
 
 const Object _unset = Object();
@@ -13,6 +15,7 @@ class ActiveSession {
   const ActiveSession({
     required this.id,
     required this.subjectId,
+    required this.kind,
     required this.mode,
     required this.status,
     required this.targetSeconds,
@@ -26,6 +29,7 @@ class ActiveSession {
 
   final String id;
   final String subjectId;
+  final StudySessionKind kind;
   final StudySessionMode mode;
   final StudySessionStatus status;
   final int targetSeconds;
@@ -87,6 +91,7 @@ class ActiveSession {
   ActiveSession copyWith({
     String? id,
     String? subjectId,
+    StudySessionKind? kind,
     StudySessionMode? mode,
     StudySessionStatus? status,
     int? targetSeconds,
@@ -100,6 +105,7 @@ class ActiveSession {
     return ActiveSession(
       id: id ?? this.id,
       subjectId: subjectId ?? this.subjectId,
+      kind: kind ?? this.kind,
       mode: mode ?? this.mode,
       status: status ?? this.status,
       targetSeconds: targetSeconds ?? this.targetSeconds,

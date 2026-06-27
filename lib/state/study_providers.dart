@@ -310,30 +310,38 @@ class FocusState {
   const FocusState({
     required this.selectedSubjectId,
     required this.selectedPresetSeconds,
+    required this.selectedBreakSeconds,
     required this.now,
     this.activeSession,
     this.lastCompletedRecord,
+    this.lastCompletedBreakSeconds,
   });
 
   final String selectedSubjectId;
   final int selectedPresetSeconds;
+  final int selectedBreakSeconds;
   final DateTime now;
   final ActiveSession? activeSession;
   final StudyRecord? lastCompletedRecord;
+  final int? lastCompletedBreakSeconds;
 
   FocusState copyWith({
     String? selectedSubjectId,
     int? selectedPresetSeconds,
+    int? selectedBreakSeconds,
     DateTime? now,
     ActiveSession? activeSession,
     bool clearActiveSession = false,
     StudyRecord? lastCompletedRecord,
     bool clearCompletedRecord = false,
+    int? lastCompletedBreakSeconds,
+    bool clearCompletedBreak = false,
   }) {
     return FocusState(
       selectedSubjectId: selectedSubjectId ?? this.selectedSubjectId,
       selectedPresetSeconds:
           selectedPresetSeconds ?? this.selectedPresetSeconds,
+      selectedBreakSeconds: selectedBreakSeconds ?? this.selectedBreakSeconds,
       now: now ?? this.now,
       activeSession: clearActiveSession
           ? null
@@ -341,6 +349,9 @@ class FocusState {
       lastCompletedRecord: clearCompletedRecord
           ? null
           : lastCompletedRecord ?? this.lastCompletedRecord,
+      lastCompletedBreakSeconds: clearCompletedBreak
+          ? null
+          : lastCompletedBreakSeconds ?? this.lastCompletedBreakSeconds,
     );
   }
 }
@@ -355,6 +366,7 @@ class FocusController extends Notifier<FocusState> {
     return FocusState(
       selectedSubjectId: firstSubject.id,
       selectedPresetSeconds: 25 * 60,
+      selectedBreakSeconds: 5 * 60,
       now: DateTime.now(),
     );
   }
@@ -366,6 +378,7 @@ class FocusController extends Notifier<FocusState> {
     state = state.copyWith(
       selectedSubjectId: subjectId,
       clearCompletedRecord: true,
+      clearCompletedBreak: true,
     );
   }
 
@@ -376,7 +389,15 @@ class FocusController extends Notifier<FocusState> {
     state = state.copyWith(
       selectedPresetSeconds: seconds,
       clearCompletedRecord: true,
+      clearCompletedBreak: true,
     );
+  }
+
+  void selectBreakPreset(int seconds) {
+    if (state.activeSession != null) {
+      return;
+    }
+    state = state.copyWith(selectedBreakSeconds: seconds);
   }
 
   void start() {
@@ -385,6 +406,7 @@ class FocusController extends Notifier<FocusState> {
     final session = ActiveSession(
       id: _uuid.v4(),
       subjectId: state.selectedSubjectId,
+      kind: StudySessionKind.focus,
       mode: StudySessionMode.timer,
       status: StudySessionStatus.running,
       targetSeconds: targetSeconds,
@@ -398,6 +420,32 @@ class FocusController extends Notifier<FocusState> {
       now: now,
       activeSession: session,
       clearCompletedRecord: true,
+      clearCompletedBreak: true,
+    );
+    _startTicker();
+  }
+
+  void startBreak() {
+    final now = DateTime.now();
+    final targetSeconds = state.selectedBreakSeconds;
+    final session = ActiveSession(
+      id: _uuid.v4(),
+      subjectId: state.selectedSubjectId,
+      kind: StudySessionKind.rest,
+      mode: StudySessionMode.timer,
+      status: StudySessionStatus.running,
+      targetSeconds: targetSeconds,
+      startedAt: now,
+      runStartedAt: now,
+      elapsedBeforeCurrentRunSeconds: 0,
+      expectedEndAt: now.add(Duration(seconds: targetSeconds)),
+    );
+
+    state = state.copyWith(
+      now: now,
+      activeSession: session,
+      clearCompletedRecord: true,
+      clearCompletedBreak: true,
     );
     _startTicker();
   }
@@ -469,11 +517,17 @@ class FocusController extends Notifier<FocusState> {
   }
 
   void dismissCompletion() {
-    state = state.copyWith(clearCompletedRecord: true);
+    state = state.copyWith(
+      clearCompletedRecord: true,
+      clearCompletedBreak: true,
+    );
   }
 
   void startAgain() {
-    state = state.copyWith(clearCompletedRecord: true);
+    state = state.copyWith(
+      clearCompletedRecord: true,
+      clearCompletedBreak: true,
+    );
     start();
   }
 
@@ -536,6 +590,17 @@ class FocusController extends Notifier<FocusState> {
       1,
       session.completedDurationSeconds(completedAt),
     );
+    if (session.kind == StudySessionKind.rest) {
+      _completeBreakSession(
+        session: session,
+        observedAt: observedAt,
+        completedAt: completedAt,
+        durationSeconds: durationSeconds,
+        playCompletionHaptic: playCompletionHaptic,
+      );
+      return;
+    }
+
     final record = StudyRecord(
       id: _uuid.v4(),
       subjectId: session.subjectId,
@@ -544,7 +609,6 @@ class FocusController extends Notifier<FocusState> {
       durationSeconds: durationSeconds,
       source: StudyRecordSource.timer,
     );
-
     ref.read(recordsControllerProvider.notifier).addRecord(record);
     _ticker?.cancel();
     state = state.copyWith(
@@ -555,16 +619,45 @@ class FocusController extends Notifier<FocusState> {
       ),
       clearActiveSession: true,
       lastCompletedRecord: record,
+      clearCompletedBreak: true,
     );
 
     if (playCompletionHaptic) {
-      final settings = ref.read(settingsControllerProvider);
-      unawaited(
-        ref
-            .read(hapticServiceProvider)
-            .playTimerCompletion(settings.vibrationPattern),
-      );
+      _playCompletionHaptic();
     }
+  }
+
+  void _completeBreakSession({
+    required ActiveSession session,
+    required DateTime observedAt,
+    required DateTime completedAt,
+    required int durationSeconds,
+    required bool playCompletionHaptic,
+  }) {
+    _ticker?.cancel();
+    state = state.copyWith(
+      now: observedAt,
+      activeSession: session.copyWith(
+        status: StudySessionStatus.completed,
+        completedAt: completedAt,
+      ),
+      clearActiveSession: true,
+      clearCompletedRecord: true,
+      lastCompletedBreakSeconds: durationSeconds,
+    );
+
+    if (playCompletionHaptic) {
+      _playCompletionHaptic();
+    }
+  }
+
+  void _playCompletionHaptic() {
+    final settings = ref.read(settingsControllerProvider);
+    unawaited(
+      ref
+          .read(hapticServiceProvider)
+          .playTimerCompletion(settings.vibrationPattern),
+    );
   }
 }
 
