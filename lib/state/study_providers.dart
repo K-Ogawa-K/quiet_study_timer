@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -13,8 +14,19 @@ import '../models/study_subject.dart';
 
 const _recordsStorageKey = 'study_records_v1';
 const _settingsStorageKey = 'app_settings_v1';
+const _subjectsStorageKey = 'study_subjects_v1';
 
 const _uuid = Uuid();
+const _subjectColorPalette = [
+  '2F80ED',
+  '35A67B',
+  '7B61D1',
+  '8E8E93',
+  'D79A2B',
+  'D96A6A',
+  '4A90A4',
+  '9B7A5C',
+];
 
 const defaultStudySubjects = <StudySubject>[
   StudySubject(id: 'english', name: '英語', colorHex: '2F80ED', sortOrder: 0),
@@ -23,10 +35,76 @@ const defaultStudySubjects = <StudySubject>[
   StudySubject(id: 'other', name: 'その他', colorHex: '8E8E93', sortOrder: 3),
 ];
 
-final subjectsProvider = Provider<List<StudySubject>>((ref) {
-  return defaultStudySubjects.where((subject) => !subject.isArchived).toList()
-    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-});
+final subjectsProvider =
+    NotifierProvider<SubjectsController, List<StudySubject>>(
+      SubjectsController.new,
+    );
+
+class SubjectsController extends Notifier<List<StudySubject>> {
+  @override
+  List<StudySubject> build() {
+    unawaited(_load());
+    return _sortedActiveSubjects(defaultStudySubjects);
+  }
+
+  Future<void> _load() async {
+    final preferences = await SharedPreferences.getInstance();
+    final rawJson = preferences.getString(_subjectsStorageKey);
+    if (rawJson == null) {
+      return;
+    }
+
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! List) {
+      return;
+    }
+
+    final subjects = decoded
+        .whereType<Map>()
+        .map((item) => StudySubject.fromJson(Map<String, Object?>.from(item)))
+        .toList();
+    if (subjects.isEmpty) {
+      return;
+    }
+
+    state = _sortedActiveSubjects(subjects);
+  }
+
+  Future<void> _save() async {
+    final preferences = await SharedPreferences.getInstance();
+    final encoded = state.map((subject) => subject.toJson()).toList();
+    await preferences.setString(_subjectsStorageKey, jsonEncode(encoded));
+  }
+
+  void addSubject(String name) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      return;
+    }
+
+    final existingNames = state.map((subject) => subject.name).toSet();
+    if (existingNames.contains(trimmedName)) {
+      return;
+    }
+
+    final nextSortOrder = state.isEmpty
+        ? 0
+        : state.map((subject) => subject.sortOrder).reduce(max) + 1;
+    final colorHex =
+        _subjectColorPalette[nextSortOrder % _subjectColorPalette.length];
+
+    state = _sortedActiveSubjects([
+      ...state,
+      StudySubject(
+        id: _uuid.v4(),
+        name: trimmedName,
+        colorHex: colorHex,
+        sortOrder: nextSortOrder,
+      ),
+    ]);
+    unawaited(_save());
+  }
+}
 
 final settingsControllerProvider =
     NotifierProvider<SettingsController, AppSettings>(SettingsController.new);
@@ -46,8 +124,8 @@ class SettingsController extends Notifier<AppSettings> {
     }
 
     final decoded = jsonDecode(rawJson);
-    if (decoded is Map<String, Object?>) {
-      state = AppSettings.fromJson(decoded);
+    if (decoded is Map) {
+      state = AppSettings.fromJson(Map<String, Object?>.from(decoded));
     }
   }
 
@@ -66,6 +144,11 @@ class SettingsController extends Notifier<AppSettings> {
 
   void setVibrationPattern(VibrationPattern pattern) {
     state = state.copyWith(vibrationPattern: pattern);
+    unawaited(_save());
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    state = state.copyWith(themeMode: mode);
     unawaited(_save());
   }
 }
@@ -96,8 +179,10 @@ class RecordsController extends Notifier<List<StudyRecord>> {
 
     final records =
         decoded
-            .whereType<Map<String, Object?>>()
-            .map(StudyRecord.fromJson)
+            .whereType<Map>()
+            .map(
+              (item) => StudyRecord.fromJson(Map<String, Object?>.from(item)),
+            )
             .toList()
           ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     state = records;
@@ -113,6 +198,40 @@ class RecordsController extends Notifier<List<StudyRecord>> {
     final records = [...state, record]
       ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     state = records;
+    unawaited(_save());
+  }
+
+  void addManualRecord({
+    required String subjectId,
+    required DateTime startedAt,
+    required DateTime endedAt,
+  }) {
+    addRecord(
+      StudyRecord(
+        id: _uuid.v4(),
+        subjectId: subjectId,
+        startedAt: startedAt,
+        endedAt: endedAt,
+        durationSeconds: endedAt.difference(startedAt).inSeconds,
+        source: StudyRecordSource.manual,
+      ),
+    );
+  }
+
+  void updateRecord(StudyRecord record) {
+    final records = [
+      for (final existingRecord in state)
+        if (existingRecord.id == record.id) record else existingRecord,
+    ]..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    state = records;
+    unawaited(_save());
+  }
+
+  void deleteRecord(String recordId) {
+    state = [
+      for (final record in state)
+        if (record.id != recordId) record,
+    ];
     unawaited(_save());
   }
 }
@@ -389,4 +508,9 @@ bool _isSameLocalDay(DateTime left, DateTime right) {
   return left.year == right.year &&
       left.month == right.month &&
       left.day == right.day;
+}
+
+List<StudySubject> _sortedActiveSubjects(List<StudySubject> subjects) {
+  return subjects.where((subject) => !subject.isArchived).toList()
+    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 }

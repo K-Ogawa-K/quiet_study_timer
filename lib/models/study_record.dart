@@ -20,6 +20,24 @@ class StudyRecord {
   final int durationSeconds;
   final StudyRecordSource source;
 
+  StudyRecord copyWith({
+    String? id,
+    String? subjectId,
+    DateTime? startedAt,
+    DateTime? endedAt,
+    int? durationSeconds,
+    StudyRecordSource? source,
+  }) {
+    return StudyRecord(
+      id: id ?? this.id,
+      subjectId: subjectId ?? this.subjectId,
+      startedAt: startedAt ?? this.startedAt,
+      endedAt: endedAt ?? this.endedAt,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      source: source ?? this.source,
+    );
+  }
+
   Map<String, Object?> toJson() {
     return {
       'id': id,

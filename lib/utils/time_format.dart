@@ -42,6 +42,29 @@ String formatClockRange(DateTime startedAt, DateTime endedAt) {
   return '${formatter.format(startedAt)}-${formatter.format(endedAt)}';
 }
 
+String formatRecordSectionTitle(DateTime date, DateTime now) {
+  final localDate = DateTime(date.year, date.month, date.day);
+  final today = DateTime(now.year, now.month, now.day);
+  final yesterday = today.subtract(const Duration(days: 1));
+
+  if (localDate == today) {
+    return '今日';
+  }
+  if (localDate == yesterday) {
+    return '昨日';
+  }
+
+  return DateFormat('M月d日').format(localDate);
+}
+
+String formatFormDate(DateTime date) {
+  return DateFormat('yyyy/M/d').format(date);
+}
+
+String formatClock(DateTime dateTime) {
+  return DateFormat('H:mm').format(dateTime);
+}
+
 String _twoDigits(int value) {
   return value.toString().padLeft(2, '0');
 }
