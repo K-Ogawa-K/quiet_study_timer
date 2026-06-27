@@ -1,7 +1,11 @@
+import 'dart:math';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme/app_theme.dart';
+import '../../models/study_analytics.dart';
 import '../../models/study_subject.dart';
 import '../../state/study_providers.dart';
 import '../../utils/time_format.dart';
@@ -11,8 +15,7 @@ class AnalyticsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final totalSeconds = ref.watch(todayTotalSecondsProvider);
-    final subjectTotals = ref.watch(todaySubjectTotalsProvider);
+    final analytics = ref.watch(sevenDayAnalyticsProvider);
     final subjects = ref.watch(subjectsProvider);
 
     return CupertinoPageScaffold(
@@ -21,13 +24,18 @@ class AnalyticsTab extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           children: [
-            _SummaryCard(totalSeconds: totalSeconds),
+            _SummaryCard(totalSeconds: analytics.totalSeconds),
             const SizedBox(height: 18),
-            _SubjectBreakdown(
-              totalSeconds: totalSeconds,
-              subjectTotals: subjectTotals,
-              subjects: subjects,
-            ),
+            if (analytics.hasRecords) ...[
+              _SevenDayBars(days: analytics.days),
+              const SizedBox(height: 18),
+              _SubjectBreakdown(
+                totalSeconds: analytics.totalSeconds,
+                subjectTotals: analytics.subjectTotals,
+                subjects: subjects,
+              ),
+            ] else
+              const _EmptyAnalyticsCard(),
           ],
         ),
       ),
@@ -51,7 +59,7 @@ class _SummaryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '今日',
+            '7日間',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -63,6 +71,104 @@ class _SummaryCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SevenDayBars extends StatelessWidget {
+  const _SevenDayBars({required this.days});
+
+  final List<DailyStudyTotal> days;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final maxSeconds = days.fold<int>(
+      0,
+      (maxSeconds, day) => max(maxSeconds, day.totalSeconds),
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: _surfaceDecoration(theme),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('日別', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 124,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final day in days) ...[
+                  Expanded(
+                    child: _DayBar(
+                      day: day,
+                      maxSeconds: maxSeconds,
+                      isToday: _isSameLocalDay(day.date, DateTime.now()),
+                    ),
+                  ),
+                  if (day != days.last) const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DayBar extends StatelessWidget {
+  const _DayBar({
+    required this.day,
+    required this.maxSeconds,
+    required this.isToday,
+  });
+
+  final DailyStudyTotal day;
+  final int maxSeconds;
+  final bool isToday;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fraction = maxSeconds == 0 ? 0.0 : day.totalSeconds / maxSeconds;
+    final barHeight = day.totalSeconds == 0 ? 2.0 : max(8.0, 84.0 * fraction);
+    final barColor = isToday
+        ? AppTheme.accentBlue
+        : AppTheme.accentBlue.withValues(alpha: 0.42);
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        SizedBox(
+          height: 88,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              width: 8,
+              height: barHeight,
+              decoration: BoxDecoration(
+                color: day.totalSeconds == 0 ? theme.dividerColor : barColor,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _weekdayLabel(day.date),
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: isToday
+                ? AppTheme.accentBlue
+                : theme.colorScheme.onSurfaceVariant,
+            fontWeight: isToday ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -93,23 +199,12 @@ class _SubjectBreakdown extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text('科目別', style: theme.textTheme.titleMedium),
           ),
-          if (rows.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-              child: Text(
-                '今日はまだ記録がありません',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            for (final entry in rows)
-              _BreakdownRow(
-                subject: _subjectById(subjects, entry.key),
-                seconds: entry.value,
-                fraction: totalSeconds == 0 ? 0 : entry.value / totalSeconds,
-              ),
+          for (final entry in rows)
+            _BreakdownRow(
+              subject: _subjectById(subjects, entry.key),
+              seconds: entry.value,
+              fraction: totalSeconds == 0 ? 0 : entry.value / totalSeconds,
+            ),
         ],
       ),
     );
@@ -130,12 +225,23 @@ class _BreakdownRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final subjectColor = Color(int.parse('FF${subject.colorHex}', radix: 16));
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
       child: Column(
         children: [
           Row(
             children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: subjectColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(subject.name, style: theme.textTheme.bodyMedium),
               ),
@@ -150,14 +256,38 @@ class _BreakdownRow extends StatelessWidget {
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: fraction.clamp(0, 1),
-              minHeight: 6,
-              color: Color(int.parse('FF${subject.colorHex}', radix: 16)),
-              backgroundColor: theme.dividerColor,
+            child: Container(
+              height: 6,
+              color: theme.dividerColor,
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: fraction.clamp(0, 1),
+                child: Container(color: subjectColor),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyAnalyticsCard extends StatelessWidget {
+  const _EmptyAnalyticsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+      decoration: _surfaceDecoration(theme),
+      child: Text(
+        '記録がありません',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -183,6 +313,29 @@ BoxDecoration _surfaceDecoration(ThemeData theme) {
 StudySubject _subjectById(List<StudySubject> subjects, String subjectId) {
   return subjects.firstWhere(
     (subject) => subject.id == subjectId,
-    orElse: () => subjects.first,
+    orElse: () => StudySubject(
+      id: subjectId,
+      name: '未設定',
+      colorHex: '8E8E93',
+      sortOrder: 999,
+    ),
   );
+}
+
+String _weekdayLabel(DateTime date) {
+  return switch (date.weekday) {
+    DateTime.monday => '月',
+    DateTime.tuesday => '火',
+    DateTime.wednesday => '水',
+    DateTime.thursday => '木',
+    DateTime.friday => '金',
+    DateTime.saturday => '土',
+    _ => '日',
+  };
+}
+
+bool _isSameLocalDay(DateTime left, DateTime right) {
+  return left.year == right.year &&
+      left.month == right.month &&
+      left.day == right.day;
 }

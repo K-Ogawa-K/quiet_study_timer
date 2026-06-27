@@ -281,7 +281,11 @@ class _SubjectManagementSheetState
                       color: theme.dividerColor,
                     ),
                     for (final (index, subject) in subjects.indexed) ...[
-                      _SubjectRow(subject: subject),
+                      _SubjectRow(
+                        subject: subject,
+                        onPressed: () =>
+                            _showEditSubjectDialog(context, ref, subject),
+                      ),
                       if (index != subjects.length - 1)
                         Divider(
                           height: 1,
@@ -312,28 +316,41 @@ class _SubjectManagementSheetState
 }
 
 class _SubjectRow extends StatelessWidget {
-  const _SubjectRow({required this.subject});
+  const _SubjectRow({required this.subject, required this.onPressed});
 
   final StudySubject subject;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: Color(int.parse('FF${subject.colorHex}', radix: 16)),
-              shape: BoxShape.circle,
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      minimumSize: Size.zero,
+      onPressed: onPressed,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: Color(int.parse('FF${subject.colorHex}', radix: 16)),
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(child: Text(subject.name, style: theme.textTheme.bodyLarge)),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(subject.name, style: theme.textTheme.bodyLarge),
+            ),
+            Icon(
+              CupertinoIcons.chevron_forward,
+              size: 17,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -418,6 +435,53 @@ Future<void> _showSubjectManagementSheet(BuildContext context) async {
     context: context,
     builder: (context) => const _SubjectManagementSheet(),
   );
+}
+
+Future<void> _showEditSubjectDialog(
+  BuildContext context,
+  WidgetRef ref,
+  StudySubject subject,
+) async {
+  final controller = TextEditingController(text: subject.name);
+  await showCupertinoDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return CupertinoAlertDialog(
+        title: const Text('科目名'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            inputFormatters: [LengthLimitingTextInputFormatter(20)],
+            onSubmitted: (_) {
+              ref
+                  .read(subjectsProvider.notifier)
+                  .renameSubject(subject.id, controller.text);
+              Navigator.of(dialogContext).pop();
+            },
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('キャンセル'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () {
+              ref
+                  .read(subjectsProvider.notifier)
+                  .renameSubject(subject.id, controller.text);
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      );
+    },
+  );
+  controller.dispose();
 }
 
 CupertinoNavigationBar _navigationBar(BuildContext context, String title) {

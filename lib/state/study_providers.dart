@@ -1,20 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/active_session.dart';
 import '../models/app_settings.dart';
+import '../models/study_analytics.dart';
 import '../models/study_record.dart';
 import '../models/study_subject.dart';
-
-const _recordsStorageKey = 'study_records_v1';
-const _settingsStorageKey = 'app_settings_v1';
-const _subjectsStorageKey = 'study_subjects_v1';
+import '../repositories/study_data_repository.dart';
 
 const _uuid = Uuid();
 const _subjectColorPalette = [
@@ -35,6 +31,10 @@ const defaultStudySubjects = <StudySubject>[
   StudySubject(id: 'other', name: 'その他', colorHex: '8E8E93', sortOrder: 3),
 ];
 
+final studyDataRepositoryProvider = Provider<StudyDataRepository>((ref) {
+  return SharedPreferencesStudyDataRepository();
+});
+
 final subjectsProvider =
     NotifierProvider<SubjectsController, List<StudySubject>>(
       SubjectsController.new,
@@ -48,22 +48,8 @@ class SubjectsController extends Notifier<List<StudySubject>> {
   }
 
   Future<void> _load() async {
-    final preferences = await SharedPreferences.getInstance();
-    final rawJson = preferences.getString(_subjectsStorageKey);
-    if (rawJson == null) {
-      return;
-    }
-
-    final decoded = jsonDecode(rawJson);
-    if (decoded is! List) {
-      return;
-    }
-
-    final subjects = decoded
-        .whereType<Map>()
-        .map((item) => StudySubject.fromJson(Map<String, Object?>.from(item)))
-        .toList();
-    if (subjects.isEmpty) {
+    final subjects = await ref.read(studyDataRepositoryProvider).loadSubjects();
+    if (subjects == null || subjects.isEmpty) {
       return;
     }
 
@@ -71,9 +57,7 @@ class SubjectsController extends Notifier<List<StudySubject>> {
   }
 
   Future<void> _save() async {
-    final preferences = await SharedPreferences.getInstance();
-    final encoded = state.map((subject) => subject.toJson()).toList();
-    await preferences.setString(_subjectsStorageKey, jsonEncode(encoded));
+    await ref.read(studyDataRepositoryProvider).saveSubjects(state);
   }
 
   void addSubject(String name) {
@@ -104,6 +88,39 @@ class SubjectsController extends Notifier<List<StudySubject>> {
     ]);
     unawaited(_save());
   }
+
+  void renameSubject(String subjectId, String name) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      return;
+    }
+
+    final hasDuplicate = state.any(
+      (subject) => subject.id != subjectId && subject.name == trimmedName,
+    );
+    if (hasDuplicate) {
+      return;
+    }
+
+    var updated = false;
+    final subjects = [
+      for (final subject in state)
+        if (subject.id == subjectId)
+          subject.copyWith(name: trimmedName)
+        else
+          subject,
+    ];
+
+    updated = subjects.any(
+      (subject) => subject.id == subjectId && subject.name == trimmedName,
+    );
+    if (!updated) {
+      return;
+    }
+
+    state = _sortedActiveSubjects(subjects);
+    unawaited(_save());
+  }
 }
 
 final settingsControllerProvider =
@@ -117,24 +134,14 @@ class SettingsController extends Notifier<AppSettings> {
   }
 
   Future<void> _load() async {
-    final preferences = await SharedPreferences.getInstance();
-    final rawJson = preferences.getString(_settingsStorageKey);
-    if (rawJson == null) {
-      return;
-    }
-
-    final decoded = jsonDecode(rawJson);
-    if (decoded is Map) {
-      state = AppSettings.fromJson(Map<String, Object?>.from(decoded));
+    final settings = await ref.read(studyDataRepositoryProvider).loadSettings();
+    if (settings != null) {
+      state = settings;
     }
   }
 
   Future<void> _save() async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(
-      _settingsStorageKey,
-      jsonEncode(state.toJson()),
-    );
+    await ref.read(studyDataRepositoryProvider).saveSettings(state);
   }
 
   void setLibraryMode(bool enabled) {
@@ -166,32 +173,14 @@ class RecordsController extends Notifier<List<StudyRecord>> {
   }
 
   Future<void> _load() async {
-    final preferences = await SharedPreferences.getInstance();
-    final rawJson = preferences.getString(_recordsStorageKey);
-    if (rawJson == null) {
-      return;
-    }
-
-    final decoded = jsonDecode(rawJson);
-    if (decoded is! List) {
-      return;
-    }
-
-    final records =
-        decoded
-            .whereType<Map>()
-            .map(
-              (item) => StudyRecord.fromJson(Map<String, Object?>.from(item)),
-            )
-            .toList()
-          ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    final records = [
+      ...await ref.read(studyDataRepositoryProvider).loadRecords(),
+    ]..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     state = records;
   }
 
   Future<void> _save() async {
-    final preferences = await SharedPreferences.getInstance();
-    final encoded = state.map((record) => record.toJson()).toList();
-    await preferences.setString(_recordsStorageKey, jsonEncode(encoded));
+    await ref.read(studyDataRepositoryProvider).saveRecords(state);
   }
 
   void addRecord(StudyRecord record) {
@@ -261,6 +250,51 @@ final todaySubjectTotalsProvider = Provider<Map<String, int>>((ref) {
     );
   }
   return totals;
+});
+
+final sevenDayAnalyticsProvider = Provider<SevenDayAnalytics>((ref) {
+  final records = ref.watch(recordsControllerProvider);
+  final today = _localDay(DateTime.now());
+  final startDate = today.subtract(const Duration(days: 6));
+  final dayTotals = <DateTime, int>{};
+  final subjectTotals = <String, int>{};
+
+  for (var index = 0; index < 7; index += 1) {
+    dayTotals[startDate.add(Duration(days: index))] = 0;
+  }
+
+  for (final record in records) {
+    final recordDay = _localDay(record.startedAt);
+    if (recordDay.isBefore(startDate) || recordDay.isAfter(today)) {
+      continue;
+    }
+
+    dayTotals.update(
+      recordDay,
+      (value) => value + record.durationSeconds,
+      ifAbsent: () => record.durationSeconds,
+    );
+    subjectTotals.update(
+      record.subjectId,
+      (value) => value + record.durationSeconds,
+      ifAbsent: () => record.durationSeconds,
+    );
+  }
+
+  final days = [
+    for (final entry in dayTotals.entries)
+      DailyStudyTotal(date: entry.key, totalSeconds: entry.value),
+  ];
+  final totalSeconds = days.fold<int>(
+    0,
+    (total, day) => total + day.totalSeconds,
+  );
+
+  return SevenDayAnalytics(
+    days: days,
+    totalSeconds: totalSeconds,
+    subjectTotals: subjectTotals,
+  );
 });
 
 final focusControllerProvider = NotifierProvider<FocusController, FocusState>(
@@ -508,6 +542,10 @@ bool _isSameLocalDay(DateTime left, DateTime right) {
   return left.year == right.year &&
       left.month == right.month &&
       left.day == right.day;
+}
+
+DateTime _localDay(DateTime dateTime) {
+  return DateTime(dateTime.year, dateTime.month, dateTime.day);
 }
 
 List<StudySubject> _sortedActiveSubjects(List<StudySubject> subjects) {
