@@ -12,6 +12,7 @@ import '../models/study_record.dart';
 import '../models/study_subject.dart';
 import '../repositories/study_data_repository.dart';
 import '../services/haptic_service.dart';
+import '../services/notification_service.dart';
 
 const _uuid = Uuid();
 const _subjectColorPalette = [
@@ -39,6 +40,43 @@ final studyDataRepositoryProvider = Provider<StudyDataRepository>((ref) {
 final hapticServiceProvider = Provider<HapticService>((ref) {
   return const SystemHapticService();
 });
+
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  return LocalNotificationService();
+});
+
+final notificationPermissionControllerProvider =
+    NotifierProvider<
+      NotificationPermissionController,
+      NotificationPermissionState
+    >(NotificationPermissionController.new);
+
+class NotificationPermissionController
+    extends Notifier<NotificationPermissionState> {
+  @override
+  NotificationPermissionState build() {
+    unawaited(refresh());
+    return NotificationPermissionState.unknown;
+  }
+
+  Future<void> refresh() async {
+    final notificationService = ref.read(notificationServiceProvider);
+    final permissionState = await notificationService.permissionState();
+    if (!ref.mounted) {
+      return;
+    }
+    state = permissionState;
+  }
+
+  Future<void> requestPermission() async {
+    final notificationService = ref.read(notificationServiceProvider);
+    final permissionState = await notificationService.requestPermission();
+    if (!ref.mounted) {
+      return;
+    }
+    state = permissionState;
+  }
+}
 
 final subjectsProvider =
     NotifierProvider<SubjectsController, List<StudySubject>>(
@@ -423,6 +461,7 @@ class FocusController extends Notifier<FocusState> {
       clearCompletedBreak: true,
     );
     _startTicker();
+    unawaited(_scheduleSessionNotification(session));
   }
 
   void startBreak() {
@@ -448,6 +487,7 @@ class FocusController extends Notifier<FocusState> {
       clearCompletedBreak: true,
     );
     _startTicker();
+    unawaited(_scheduleSessionNotification(session));
   }
 
   void pause() {
@@ -478,6 +518,7 @@ class FocusController extends Notifier<FocusState> {
       ),
     );
     _ticker?.cancel();
+    unawaited(_cancelSessionNotification());
   }
 
   void resume() {
@@ -504,6 +545,7 @@ class FocusController extends Notifier<FocusState> {
       ),
     );
     _startTicker();
+    unawaited(_scheduleCurrentSessionNotification());
   }
 
   void finish() {
@@ -513,6 +555,7 @@ class FocusController extends Notifier<FocusState> {
     }
 
     final now = DateTime.now();
+    unawaited(_cancelSessionNotification());
     _completeSession(now);
   }
 
@@ -611,6 +654,7 @@ class FocusController extends Notifier<FocusState> {
     );
     ref.read(recordsControllerProvider.notifier).addRecord(record);
     _ticker?.cancel();
+    unawaited(_cancelSessionNotification());
     state = state.copyWith(
       now: observedAt,
       activeSession: session.copyWith(
@@ -635,6 +679,7 @@ class FocusController extends Notifier<FocusState> {
     required bool playCompletionHaptic,
   }) {
     _ticker?.cancel();
+    unawaited(_cancelSessionNotification());
     state = state.copyWith(
       now: observedAt,
       activeSession: session.copyWith(
@@ -658,6 +703,27 @@ class FocusController extends Notifier<FocusState> {
           .read(hapticServiceProvider)
           .playTimerCompletion(settings.vibrationPattern),
     );
+  }
+
+  Future<void> _scheduleCurrentSessionNotification() async {
+    final session = state.activeSession;
+    if (session == null || session.status != StudySessionStatus.running) {
+      return;
+    }
+    await _scheduleSessionNotification(session);
+  }
+
+  Future<void> _scheduleSessionNotification(ActiveSession session) async {
+    final notificationService = ref.read(notificationServiceProvider);
+    await notificationService.scheduleSessionEnd(session);
+    if (!ref.mounted) {
+      return;
+    }
+    await ref.read(notificationPermissionControllerProvider.notifier).refresh();
+  }
+
+  Future<void> _cancelSessionNotification() async {
+    await ref.read(notificationServiceProvider).cancelSessionEnd();
   }
 }
 

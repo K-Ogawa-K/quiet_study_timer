@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme/app_theme.dart';
 import '../../models/app_settings.dart';
 import '../../models/study_subject.dart';
+import '../../services/notification_service.dart';
 import '../../state/study_providers.dart';
 
 class SettingsTab extends ConsumerWidget {
@@ -14,8 +15,14 @@ class SettingsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsControllerProvider);
+    final notificationPermission = ref.watch(
+      notificationPermissionControllerProvider,
+    );
     final subjects = ref.watch(subjectsProvider);
     final controller = ref.read(settingsControllerProvider.notifier);
+    final notificationController = ref.read(
+      notificationPermissionControllerProvider.notifier,
+    );
 
     return CupertinoPageScaffold(
       navigationBar: _navigationBar(context, '設定'),
@@ -35,6 +42,12 @@ class SettingsTab extends ConsumerWidget {
                   title: '振動パターン',
                   value: settings.vibrationPattern.label,
                   onPressed: () => _showVibrationPicker(context, controller),
+                ),
+                _SettingsPickerRow(
+                  title: 'タイマー通知',
+                  value: notificationPermission.label,
+                  subtitle: _notificationSubtitle(notificationPermission),
+                  onPressed: notificationController.requestPermission,
                 ),
               ],
             ),
@@ -141,11 +154,13 @@ class _SettingsPickerRow extends StatelessWidget {
     required this.title,
     required this.value,
     required this.onPressed,
+    this.subtitle,
   });
 
   final String title;
   final String value;
   final VoidCallback onPressed;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +173,24 @@ class _SettingsPickerRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         child: Row(
           children: [
-            Expanded(child: Text(title, style: theme.textTheme.bodyLarge)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: theme.textTheme.bodyLarge),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle!,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
             Text(
               value,
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -372,6 +404,14 @@ class _SheetHandle extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _notificationSubtitle(NotificationPermissionState state) {
+  return switch (state) {
+    NotificationPermissionState.denied => 'アプリ内の表示と振動は使えます',
+    NotificationPermissionState.unsupported => 'この端末では使えません',
+    _ => null,
+  };
 }
 
 Future<void> _showVibrationPicker(

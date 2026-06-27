@@ -208,6 +208,26 @@ void main() {
     expect(find.text('ゆっくり'), findsOneWidget);
   });
 
+  testWidgets(
+    'shows the quiet notification setting without prompting on boot',
+    (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: QuietStudyApp()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('設定').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('タイマー通知'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Text && (widget.data == '未確認' || widget.data == '未対応'),
+        ),
+        findsWidgets,
+      );
+    },
+  );
+
   test('subjects and records persist through the repository', () async {
     final startedAt = DateTime.now().subtract(const Duration(minutes: 25));
     final endedAt = DateTime.now();
