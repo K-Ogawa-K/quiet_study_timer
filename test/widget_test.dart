@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,8 +9,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:quiet_study_timer/app/quiet_study_app.dart';
 import 'package:quiet_study_timer/models/active_session.dart';
 import 'package:quiet_study_timer/models/app_settings.dart';
+import 'package:quiet_study_timer/models/study_record.dart';
+import 'package:quiet_study_timer/repositories/study_data_repository.dart';
+import 'package:quiet_study_timer/services/notification_service.dart';
 import 'package:quiet_study_timer/services/wake_lock_service.dart';
 import 'package:quiet_study_timer/state/study_providers.dart';
+import 'package:quiet_study_timer/utils/time_format.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -296,6 +301,32 @@ void main() {
     );
   });
 
+  test('repository ignores invalid persisted json safely', () async {
+    SharedPreferences.setMockInitialValues({
+      'study_subjects_v1': '{broken',
+      'study_records_v1': jsonEncode([
+        {'id': 'missing-fields'},
+        {
+          'id': 'invalid-range',
+          'subjectId': 'english',
+          'startedAt': DateTime(2026, 1, 1, 10).toIso8601String(),
+          'endedAt': DateTime(2026, 1, 1, 9).toIso8601String(),
+          'durationSeconds': -60,
+          'source': 'manual',
+        },
+      ]),
+      'app_settings_v1': jsonEncode({'themeMode': 1}),
+      'active_session_v1': jsonEncode({'id': 'missing-fields'}),
+    });
+
+    final repository = SharedPreferencesStudyDataRepository();
+
+    expect(await repository.loadSubjects(), isNull);
+    expect(await repository.loadRecords(), isEmpty);
+    expect(await repository.loadSettings(), isNull);
+    expect(await repository.loadActiveSession(), isNull);
+  });
+
   test('active focus session restores after app restart', () async {
     final firstContainer = ProviderContainer();
     firstContainer.read(focusControllerProvider.notifier).start();
@@ -328,6 +359,44 @@ void main() {
     expect(restoredSession?.id, firstSession?.id);
     expect(restoredSession?.status, StudySessionStatus.running);
   });
+
+  test(
+    'timer notifications are rescheduled through pause resume and finish',
+    () async {
+      final notifications = _FakeNotificationService();
+      final container = ProviderContainer(
+        overrides: [
+          notificationServiceProvider.overrideWithValue(notifications),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final controller = container.read(focusControllerProvider.notifier);
+
+      controller.start();
+      await _flushAsync();
+      expect(notifications.scheduledKinds, [StudySessionKind.focus]);
+
+      controller.pause();
+      await _flushAsync();
+      expect(notifications.cancelAllCount, 1);
+
+      controller.resume();
+      await _flushAsync();
+      expect(notifications.scheduledKinds, [
+        StudySessionKind.focus,
+        StudySessionKind.focus,
+      ]);
+
+      controller.finish();
+      await _flushAsync();
+      expect(notifications.cancelAllCount, 2);
+      expect(container.read(recordsControllerProvider), hasLength(1));
+
+      controller.reconcileWithClock();
+      expect(container.read(recordsControllerProvider), hasLength(1));
+    },
+  );
 
   test('expired persisted focus session saves a record only once', () async {
     final now = DateTime.now();
@@ -364,6 +433,55 @@ void main() {
     container.read(focusControllerProvider.notifier).reconcileWithClock();
     expect(container.read(recordsControllerProvider), hasLength(1));
   });
+
+  test(
+    'expired persisted focus session with an existing record is not duplicated',
+    () async {
+      final now = DateTime.now();
+      final startedAt = now.subtract(const Duration(minutes: 30));
+      final endedAt = now.subtract(const Duration(minutes: 5));
+      final session = ActiveSession(
+        id: 'already-recorded-session',
+        subjectId: 'english',
+        kind: StudySessionKind.focus,
+        mode: StudySessionMode.timer,
+        status: StudySessionStatus.running,
+        targetSeconds: 25 * 60,
+        startedAt: startedAt,
+        runStartedAt: startedAt,
+        elapsedBeforeCurrentRunSeconds: 0,
+        expectedEndAt: endedAt,
+      );
+      final record = StudyRecord(
+        id: session.id,
+        subjectId: session.subjectId,
+        startedAt: startedAt,
+        endedAt: endedAt,
+        durationSeconds: 25 * 60,
+        source: StudyRecordSource.timer,
+      );
+      SharedPreferences.setMockInitialValues({
+        'active_session_v1': jsonEncode(session.toJson()),
+        'study_records_v1': jsonEncode([record.toJson()]),
+      });
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(recordsControllerProvider);
+      container.read(focusControllerProvider);
+
+      await _flushAsync();
+
+      expect(container.read(recordsControllerProvider), hasLength(1));
+      expect(
+        container.read(focusControllerProvider).lastCompletedRecord?.id,
+        session.id,
+      );
+
+      container.read(focusControllerProvider.notifier).reconcileWithClock();
+      expect(container.read(recordsControllerProvider), hasLength(1));
+    },
+  );
 
   test(
     'expired persisted break session does not save a study record',
@@ -431,6 +549,75 @@ void main() {
 
     expect(container.read(todayTotalSecondsProvider), 0);
     expect(container.read(sevenDayAnalyticsProvider).totalSeconds, 30 * 60);
+  });
+
+  test('seven day analytics includes the start boundary only', () {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final includedDay = today.subtract(const Duration(days: 6));
+    final excludedDay = today.subtract(const Duration(days: 7));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final recordsController = container.read(
+      recordsControllerProvider.notifier,
+    );
+    recordsController.addManualRecord(
+      subjectId: 'english',
+      startedAt: includedDay.add(const Duration(hours: 9)),
+      endedAt: includedDay.add(const Duration(hours: 9, minutes: 20)),
+    );
+    recordsController.addManualRecord(
+      subjectId: 'english',
+      startedAt: excludedDay.add(const Duration(hours: 9)),
+      endedAt: excludedDay.add(const Duration(hours: 9, minutes: 20)),
+    );
+
+    final analytics = container.read(sevenDayAnalyticsProvider);
+    expect(analytics.totalSeconds, 20 * 60);
+    expect(analytics.days.first.date, includedDay);
+  });
+
+  test('record section titles stay stable around today and yesterday', () {
+    final now = DateTime(2026, 6, 29, 12);
+
+    expect(formatRecordSectionTitle(DateTime(2026, 6, 29), now), '今日');
+    expect(formatRecordSectionTitle(DateTime(2026, 6, 28), now), '昨日');
+    expect(formatRecordSectionTitle(DateTime(2026, 6, 20), now), '6月20日');
+  });
+
+  test('manual records with invalid time ranges are ignored', () {
+    final now = DateTime.now();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final controller = container.read(recordsControllerProvider.notifier);
+    controller.addManualRecord(
+      subjectId: 'english',
+      startedAt: now,
+      endedAt: now,
+    );
+    controller.addManualRecord(
+      subjectId: 'english',
+      startedAt: now,
+      endedAt: now.subtract(const Duration(minutes: 1)),
+    );
+    expect(container.read(recordsControllerProvider), isEmpty);
+
+    controller.addManualRecord(
+      subjectId: 'english',
+      startedAt: now,
+      endedAt: now.add(const Duration(minutes: 25)),
+    );
+    final record = container.read(recordsControllerProvider).single;
+    controller.updateRecord(
+      record.copyWith(endedAt: record.startedAt, durationSeconds: 0),
+    );
+
+    expect(
+      container.read(recordsControllerProvider).single.endedAt,
+      record.endedAt,
+    );
   });
 
   test('keep screen awake only follows running sessions', () async {
@@ -531,6 +718,80 @@ void main() {
     },
   );
 
+  testWidgets('archived subjects stay out of new focus selection', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final archivedSubject = container.read(subjectsProvider).first;
+    container
+        .read(recordsControllerProvider.notifier)
+        .addManualRecord(
+          subjectId: archivedSubject.id,
+          startedAt: DateTime.now().subtract(const Duration(minutes: 25)),
+          endedAt: DateTime.now(),
+        );
+    container
+        .read(subjectsProvider.notifier)
+        .setSubjectArchived(archivedSubject.id, true);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const QuietStudyApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('記録').last);
+    await tester.pumpAndSettle();
+    expect(find.text(archivedSubject.name), findsWidgets);
+
+    await tester.tap(find.text('集中').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('数学').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text(archivedSubject.name), findsNothing);
+    expect(find.text('数学'), findsWidgets);
+  });
+
+  testWidgets('record sheets remain usable on a small dark screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 1136);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container
+        .read(settingsControllerProvider.notifier)
+        .setThemeMode(ThemeMode.dark);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const QuietStudyApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('記録').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(CupertinoIcons.add));
+    await tester.pumpAndSettle();
+
+    expect(find.text('記録を追加'), findsOneWidget);
+
+    await tester.tap(find.text('科目').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('英語'), findsWidgets);
+  });
+
   test('the last active subject cannot be archived', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -566,5 +827,49 @@ class _FakeWakeLockService implements WakeLockService {
   @override
   Future<void> disable() async {
     enabled = false;
+  }
+}
+
+class _FakeNotificationService implements NotificationService {
+  final scheduledKinds = <StudySessionKind>[];
+  final requestPermissionFlags = <bool>[];
+  var cancelAllCount = 0;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<NotificationPermissionState> permissionState() async {
+    return NotificationPermissionState.granted;
+  }
+
+  @override
+  Future<NotificationPermissionState> requestPermission() async {
+    return NotificationPermissionState.granted;
+  }
+
+  @override
+  Future<void> scheduleSessionEnd(
+    ActiveSession session, {
+    bool requestPermission = true,
+  }) async {
+    scheduledKinds.add(session.kind);
+    requestPermissionFlags.add(requestPermission);
+  }
+
+  @override
+  Future<void> cancelSessionEnd({StudySessionKind? kind}) async {
+    cancelAllCount += 1;
+  }
+
+  @override
+  Future<void> cancelAllSessionEnds() async {
+    cancelAllCount += 1;
+  }
+}
+
+Future<void> _flushAsync() async {
+  for (var index = 0; index < 4; index += 1) {
+    await Future<void>.delayed(Duration.zero);
   }
 }

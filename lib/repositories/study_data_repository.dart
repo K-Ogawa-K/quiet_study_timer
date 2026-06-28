@@ -40,15 +40,12 @@ class SharedPreferencesStudyDataRepository implements StudyDataRepository {
       return null;
     }
 
-    final decoded = jsonDecode(rawJson);
+    final decoded = _decodeJson(rawJson);
     if (decoded is! List) {
       return null;
     }
 
-    return decoded
-        .whereType<Map>()
-        .map((item) => StudySubject.fromJson(Map<String, Object?>.from(item)))
-        .toList();
+    return [for (final item in decoded) ?_studySubjectFromJson(item)];
   }
 
   @override
@@ -66,15 +63,12 @@ class SharedPreferencesStudyDataRepository implements StudyDataRepository {
       return const [];
     }
 
-    final decoded = jsonDecode(rawJson);
+    final decoded = _decodeJson(rawJson);
     if (decoded is! List) {
       return const [];
     }
 
-    return decoded
-        .whereType<Map>()
-        .map((item) => StudyRecord.fromJson(Map<String, Object?>.from(item)))
-        .toList();
+    return [for (final item in decoded) ?_studyRecordFromJson(item)];
   }
 
   @override
@@ -92,12 +86,12 @@ class SharedPreferencesStudyDataRepository implements StudyDataRepository {
       return null;
     }
 
-    final decoded = jsonDecode(rawJson);
+    final decoded = _decodeJson(rawJson);
     if (decoded is! Map) {
       return null;
     }
 
-    return AppSettings.fromJson(Map<String, Object?>.from(decoded));
+    return _appSettingsFromJson(decoded);
   }
 
   @override
@@ -112,12 +106,12 @@ class SharedPreferencesStudyDataRepository implements StudyDataRepository {
       return null;
     }
 
-    final decoded = jsonDecode(rawJson);
+    final decoded = _decodeJson(rawJson);
     if (decoded is! Map) {
       return null;
     }
 
-    return ActiveSession.fromJson(Map<String, Object?>.from(decoded));
+    return _activeSessionFromJson(decoded);
   }
 
   @override
@@ -139,5 +133,76 @@ class SharedPreferencesStudyDataRepository implements StudyDataRepository {
   Future<void> _writeJson(String key, Object? value) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(key, jsonEncode(value));
+  }
+}
+
+Object? _decodeJson(String rawJson) {
+  try {
+    return jsonDecode(rawJson);
+  } on Object {
+    return null;
+  }
+}
+
+StudySubject? _studySubjectFromJson(Object? value) {
+  if (value is! Map) {
+    return null;
+  }
+
+  try {
+    final subject = StudySubject.fromJson(Map<String, Object?>.from(value));
+    if (subject.id.isEmpty ||
+        subject.name.trim().isEmpty ||
+        subject.colorHex.isEmpty) {
+      return null;
+    }
+    return subject;
+  } on Object {
+    return null;
+  }
+}
+
+StudyRecord? _studyRecordFromJson(Object? value) {
+  if (value is! Map) {
+    return null;
+  }
+
+  try {
+    final record = StudyRecord.fromJson(Map<String, Object?>.from(value));
+    if (!record.endedAt.isAfter(record.startedAt) ||
+        record.durationSeconds <= 0) {
+      return null;
+    }
+    return record;
+  } on Object {
+    return null;
+  }
+}
+
+AppSettings? _appSettingsFromJson(Map<dynamic, dynamic> value) {
+  try {
+    return AppSettings.fromJson(Map<String, Object?>.from(value));
+  } on Object {
+    return null;
+  }
+}
+
+ActiveSession? _activeSessionFromJson(Map<dynamic, dynamic> value) {
+  try {
+    final session = ActiveSession.fromJson(Map<String, Object?>.from(value));
+    if (session.id.isEmpty ||
+        session.subjectId.isEmpty ||
+        session.targetSeconds <= 0 ||
+        session.elapsedBeforeCurrentRunSeconds < 0) {
+      return null;
+    }
+    if (session.mode == StudySessionMode.timer &&
+        session.status == StudySessionStatus.running &&
+        session.expectedEndAt == null) {
+      return null;
+    }
+    return session;
+  } on Object {
+    return null;
   }
 }

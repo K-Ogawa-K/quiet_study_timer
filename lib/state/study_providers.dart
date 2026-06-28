@@ -339,6 +339,10 @@ class RecordsController extends Notifier<List<StudyRecord>> {
     required DateTime startedAt,
     required DateTime endedAt,
   }) {
+    if (!endedAt.isAfter(startedAt)) {
+      return;
+    }
+
     addRecord(
       StudyRecord(
         id: _uuid.v4(),
@@ -352,6 +356,11 @@ class RecordsController extends Notifier<List<StudyRecord>> {
   }
 
   void updateRecord(StudyRecord record) {
+    if (!record.endedAt.isAfter(record.startedAt) ||
+        record.durationSeconds <= 0) {
+      return;
+    }
+
     final records = [
       for (final existingRecord in state)
         if (existingRecord.id == record.id) record else existingRecord,
@@ -677,7 +686,6 @@ class FocusController extends Notifier<FocusState> {
     }
 
     final now = DateTime.now();
-    unawaited(_cancelSessionNotification());
     _completeSession(now);
   }
 
