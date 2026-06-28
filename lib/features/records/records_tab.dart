@@ -7,6 +7,7 @@ import '../../models/study_record.dart';
 import '../../models/study_subject.dart';
 import '../../state/study_providers.dart';
 import '../../utils/time_format.dart';
+import '../shared/subject_picker_sheet.dart';
 
 class RecordsTab extends ConsumerWidget {
   const RecordsTab({super.key});
@@ -126,10 +127,17 @@ class _StudyRecordRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(subject.name, style: theme.textTheme.titleMedium),
+                  Text(
+                    subject.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     formatClockRange(record.startedAt, record.endedAt),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -137,8 +145,10 @@ class _StudyRecordRow extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(width: 12),
             Text(
               formatDurationCompact(record.durationSeconds),
+              textAlign: TextAlign.right,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
@@ -188,7 +198,19 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
   late DateTime _endedAt;
 
   bool get _isEditing => widget.initialRecord != null;
-  bool get _canSave => _endedAt.isAfter(_startedAt);
+  bool get _isTimeRangeValid => _endedAt.isAfter(_startedAt);
+  bool get _hasChanges {
+    final initialRecord = widget.initialRecord;
+    if (initialRecord == null) {
+      return true;
+    }
+
+    return _subjectId != initialRecord.subjectId ||
+        _startedAt != initialRecord.startedAt ||
+        _endedAt != initialRecord.endedAt;
+  }
+
+  bool get _canSave => _isTimeRangeValid && (!_isEditing || _hasChanges);
 
   @override
   void initState() {
@@ -216,13 +238,14 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
     _endedAt = roundedNow.isAfter(_startedAt)
         ? roundedNow
         : _startedAt.add(const Duration(minutes: 25));
-    _subjectId = ref.read(subjectsProvider).first.id;
+    _subjectId = ref.read(activeSubjectsProvider).first.id;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final subjects = ref.watch(subjectsProvider);
+    final activeSubjects = ref.watch(activeSubjectsProvider);
     final subject = _subjectById(subjects, _subjectId);
 
     return Material(
@@ -269,7 +292,9 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
                         color: _canSave
                             ? AppTheme.accentBlue
                             : theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: _canSave
+                            ? FontWeight.w600
+                            : FontWeight.w400,
                       ),
                     ),
                   ),
@@ -284,8 +309,12 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
                       title: '科目',
                       value: subject.name,
                       leading: _SubjectDot(subject: subject),
-                      onPressed: () =>
-                          _showSubjectPicker(context, subjects, _setSubject),
+                      onPressed: () => showSubjectPickerSheet(
+                        context: context,
+                        subjects: activeSubjects,
+                        selectedSubjectId: _subjectId,
+                        onSelected: _setSubject,
+                      ),
                     ),
                     _DividerInset(color: theme.dividerColor),
                     _FormValueRow(
@@ -320,12 +349,12 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
                   ],
                 ),
               ),
-              if (!_canSave) ...[
+              if (!_isTimeRangeValid) ...[
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '終了時刻は開始時刻より後にしてください',
+                    '終了は開始より後にしてください',
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: CupertinoColors.systemRed.resolveFrom(context),
                     ),
@@ -414,7 +443,7 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
       builder: (dialogContext) {
         return CupertinoAlertDialog(
           title: const Text('記録を削除'),
-          content: const Text('この記録を削除しますか。'),
+          content: const Text('削除しますか。'),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.of(dialogContext).pop(),
@@ -464,10 +493,15 @@ class _FormValueRow extends StatelessWidget {
           children: [
             if (leading != null) ...[leading!, const SizedBox(width: 12)],
             Expanded(child: Text(title, style: theme.textTheme.bodyLarge)),
-            Text(
-              value,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            Flexible(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
             const SizedBox(width: 6),
@@ -537,35 +571,6 @@ Future<void> _showRecordFormSheet(
   await showCupertinoModalPopup<void>(
     context: context,
     builder: (context) => _RecordFormSheet(initialRecord: initialRecord),
-  );
-}
-
-Future<void> _showSubjectPicker(
-  BuildContext context,
-  List<StudySubject> subjects,
-  ValueChanged<String> onSelected,
-) async {
-  await showCupertinoModalPopup<void>(
-    context: context,
-    builder: (context) {
-      return CupertinoActionSheet(
-        title: const Text('科目'),
-        actions: [
-          for (final subject in subjects)
-            CupertinoActionSheetAction(
-              onPressed: () {
-                Navigator.of(context).pop();
-                onSelected(subject.id);
-              },
-              child: Text(subject.name),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('キャンセル'),
-        ),
-      );
-    },
   );
 }
 
@@ -672,7 +677,12 @@ BoxDecoration _surfaceDecoration(ThemeData theme) {
 StudySubject _subjectById(List<StudySubject> subjects, String subjectId) {
   return subjects.firstWhere(
     (subject) => subject.id == subjectId,
-    orElse: () => subjects.first,
+    orElse: () => StudySubject(
+      id: subjectId,
+      name: '未設定',
+      colorHex: '8E8E93',
+      sortOrder: 999,
+    ),
   );
 }
 

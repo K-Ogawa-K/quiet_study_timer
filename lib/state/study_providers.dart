@@ -88,11 +88,18 @@ final subjectsProvider =
       SubjectsController.new,
     );
 
+final activeSubjectsProvider = Provider<List<StudySubject>>((ref) {
+  return ref
+      .watch(subjectsProvider)
+      .where((subject) => !subject.isArchived)
+      .toList();
+});
+
 class SubjectsController extends Notifier<List<StudySubject>> {
   @override
   List<StudySubject> build() {
     unawaited(_load());
-    return _sortedActiveSubjects(defaultStudySubjects);
+    return _sortedSubjects(defaultStudySubjects);
   }
 
   Future<void> _load() async {
@@ -101,7 +108,7 @@ class SubjectsController extends Notifier<List<StudySubject>> {
       return;
     }
 
-    state = _sortedActiveSubjects(subjects);
+    state = _normalizeSubjects(subjects);
   }
 
   Future<void> _save() async {
@@ -125,7 +132,7 @@ class SubjectsController extends Notifier<List<StudySubject>> {
     final colorHex =
         _subjectColorPalette[nextSortOrder % _subjectColorPalette.length];
 
-    state = _sortedActiveSubjects([
+    state = _sortedSubjects([
       ...state,
       StudySubject(
         id: _uuid.v4(),
@@ -166,7 +173,81 @@ class SubjectsController extends Notifier<List<StudySubject>> {
       return;
     }
 
-    state = _sortedActiveSubjects(subjects);
+    state = _normalizeSubjects(subjects);
+    unawaited(_save());
+  }
+
+  void setSubjectColor(String subjectId, String colorHex) {
+    if (!_subjectColorPalette.contains(colorHex)) {
+      return;
+    }
+
+    state = _sortedSubjects([
+      for (final subject in state)
+        if (subject.id == subjectId)
+          subject.copyWith(colorHex: colorHex)
+        else
+          subject,
+    ]);
+    unawaited(_save());
+  }
+
+  void setSubjectArchived(String subjectId, bool archived) {
+    StudySubject? subject;
+    for (final existingSubject in state) {
+      if (existingSubject.id == subjectId) {
+        subject = existingSubject;
+        break;
+      }
+    }
+    if (subject == null || subject.isArchived == archived) {
+      return;
+    }
+
+    final activeCount = state.where((subject) => !subject.isArchived).length;
+    if (archived && !subject.isArchived && activeCount <= 1) {
+      return;
+    }
+
+    state = _normalizeSubjects([
+      for (final subject in state)
+        if (subject.id == subjectId)
+          subject.copyWith(isArchived: archived)
+        else
+          subject,
+    ]);
+    unawaited(_save());
+  }
+
+  void moveSubject(String subjectId, int direction) {
+    if (direction == 0 || state.length < 2) {
+      return;
+    }
+
+    final subjects = _sortedSubjects(state);
+    final currentIndex = subjects.indexWhere(
+      (subject) => subject.id == subjectId,
+    );
+    if (currentIndex == -1) {
+      return;
+    }
+
+    final nextIndex = currentIndex + direction.sign;
+    if (nextIndex < 0 || nextIndex >= subjects.length) {
+      return;
+    }
+
+    final current = subjects[currentIndex];
+    final next = subjects[nextIndex];
+    state = _sortedSubjects([
+      for (final subject in subjects)
+        if (subject.id == current.id)
+          subject.copyWith(sortOrder: next.sortOrder)
+        else if (subject.id == next.id)
+          subject.copyWith(sortOrder: current.sortOrder)
+        else
+          subject,
+    ]);
     unawaited(_save());
   }
 }
@@ -429,7 +510,7 @@ class FocusController extends Notifier<FocusState> {
       unawaited(_syncWakeLockForState());
     });
     unawaited(_restoreActiveSession());
-    final firstSubject = ref.read(subjectsProvider).first;
+    final firstSubject = ref.read(activeSubjectsProvider).first;
     return FocusState(
       selectedSubjectId: firstSubject.id,
       selectedPresetSeconds: 25 * 60,
@@ -470,9 +551,10 @@ class FocusController extends Notifier<FocusState> {
   void start() {
     final now = DateTime.now();
     final targetSeconds = state.selectedPresetSeconds;
+    final subjectId = _activeSubjectIdOrFirst(state.selectedSubjectId);
     final session = ActiveSession(
       id: _uuid.v4(),
-      subjectId: state.selectedSubjectId,
+      subjectId: subjectId,
       kind: StudySessionKind.focus,
       mode: StudySessionMode.timer,
       status: StudySessionStatus.running,
@@ -485,6 +567,7 @@ class FocusController extends Notifier<FocusState> {
 
     state = state.copyWith(
       now: now,
+      selectedSubjectId: subjectId,
       activeSession: session,
       clearCompletedRecord: true,
       clearCompletedBreak: true,
@@ -498,9 +581,10 @@ class FocusController extends Notifier<FocusState> {
   void startBreak() {
     final now = DateTime.now();
     final targetSeconds = state.selectedBreakSeconds;
+    final subjectId = _activeSubjectIdOrFirst(state.selectedSubjectId);
     final session = ActiveSession(
       id: _uuid.v4(),
-      subjectId: state.selectedSubjectId,
+      subjectId: subjectId,
       kind: StudySessionKind.rest,
       mode: StudySessionMode.timer,
       status: StudySessionStatus.running,
@@ -513,6 +597,7 @@ class FocusController extends Notifier<FocusState> {
 
     state = state.copyWith(
       now: now,
+      selectedSubjectId: subjectId,
       activeSession: session,
       clearCompletedRecord: true,
       clearCompletedBreak: true,
@@ -629,6 +714,14 @@ class FocusController extends Notifier<FocusState> {
 
   void releaseScreenAwake() {
     unawaited(ref.read(wakeLockServiceProvider).disable());
+  }
+
+  String _activeSubjectIdOrFirst(String subjectId) {
+    final activeSubjects = ref.read(activeSubjectsProvider);
+    if (activeSubjects.any((subject) => subject.id == subjectId)) {
+      return subjectId;
+    }
+    return activeSubjects.first.id;
   }
 
   void reconcileWithClock() {
@@ -930,7 +1023,18 @@ List<StudyRecord> _sortedUniqueRecords(List<StudyRecord> records) {
     ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
 }
 
-List<StudySubject> _sortedActiveSubjects(List<StudySubject> subjects) {
-  return subjects.where((subject) => !subject.isArchived).toList()
-    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+List<StudySubject> _normalizeSubjects(List<StudySubject> subjects) {
+  final sortedSubjects = _sortedSubjects(subjects);
+  if (sortedSubjects.any((subject) => !subject.isArchived)) {
+    return sortedSubjects;
+  }
+
+  return [
+    for (final (index, subject) in sortedSubjects.indexed)
+      if (index == 0) subject.copyWith(isArchived: false) else subject,
+  ];
+}
+
+List<StudySubject> _sortedSubjects(List<StudySubject> subjects) {
+  return [...subjects]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 }

@@ -460,6 +460,97 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(wakeLock.enabled, isFalse);
   });
+
+  test('subjects can be recolored reordered and archived safely', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final controller = container.read(subjectsProvider.notifier);
+    final firstSubject = container.read(subjectsProvider).first;
+    final secondSubject = container.read(subjectsProvider)[1];
+
+    controller.setSubjectColor(firstSubject.id, 'D79A2B');
+    controller.moveSubject(secondSubject.id, -1);
+    controller.setSubjectArchived(firstSubject.id, true);
+
+    final subjects = container.read(subjectsProvider);
+    expect(subjects.first.id, secondSubject.id);
+    expect(
+      subjects.firstWhere((subject) => subject.id == firstSubject.id).colorHex,
+      'D79A2B',
+    );
+    expect(
+      subjects
+          .firstWhere((subject) => subject.id == firstSubject.id)
+          .isArchived,
+      isTrue,
+    );
+    expect(
+      container.read(activeSubjectsProvider).map((subject) => subject.id),
+      isNot(contains(firstSubject.id)),
+    );
+  });
+
+  test(
+    'archived subjects still appear in records and analytics data',
+    () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final subject = container.read(subjectsProvider).first;
+      container
+          .read(subjectsProvider.notifier)
+          .renameSubject(subject.id, '英語A');
+      container
+          .read(subjectsProvider.notifier)
+          .setSubjectColor(subject.id, 'D79A2B');
+      container
+          .read(recordsControllerProvider.notifier)
+          .addManualRecord(
+            subjectId: subject.id,
+            startedAt: DateTime.now().subtract(const Duration(minutes: 25)),
+            endedAt: DateTime.now(),
+          );
+      container
+          .read(subjectsProvider.notifier)
+          .setSubjectArchived(subject.id, true);
+
+      final archivedSubject = container
+          .read(subjectsProvider)
+          .firstWhere((item) => item.id == subject.id);
+
+      expect(archivedSubject.name, '英語A');
+      expect(archivedSubject.colorHex, 'D79A2B');
+      expect(archivedSubject.isArchived, isTrue);
+      expect(
+        container.read(sevenDayAnalyticsProvider).subjectTotals[subject.id],
+        greaterThan(0),
+      );
+    },
+  );
+
+  test('the last active subject cannot be archived', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final controller = container.read(subjectsProvider.notifier);
+    final subjects = container.read(subjectsProvider);
+    for (final subject in subjects.take(subjects.length - 1)) {
+      controller.setSubjectArchived(subject.id, true);
+    }
+
+    final lastSubject = container.read(activeSubjectsProvider).single;
+    controller.setSubjectArchived(lastSubject.id, true);
+
+    expect(container.read(activeSubjectsProvider), hasLength(1));
+    expect(
+      container
+          .read(subjectsProvider)
+          .firstWhere((subject) => subject.id == lastSubject.id)
+          .isArchived,
+      isFalse,
+    );
+  });
 }
 
 class _FakeWakeLockService implements WakeLockService {

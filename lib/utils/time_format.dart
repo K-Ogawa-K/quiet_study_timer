@@ -39,6 +39,17 @@ String formatDurationCompact(int seconds) {
 
 String formatClockRange(DateTime startedAt, DateTime endedAt) {
   final formatter = DateFormat('H:mm');
+  final startedDay = DateTime(startedAt.year, startedAt.month, startedAt.day);
+  final endedDay = DateTime(endedAt.year, endedAt.month, endedAt.day);
+  final dayOffset = endedDay.difference(startedDay).inDays;
+
+  if (dayOffset == 1) {
+    return '${formatter.format(startedAt)}-翌${formatter.format(endedAt)}';
+  }
+  if (dayOffset != 0) {
+    return '${formatter.format(startedAt)}-${DateFormat('M/d H:mm').format(endedAt)}';
+  }
+
   return '${formatter.format(startedAt)}-${formatter.format(endedAt)}';
 }
 

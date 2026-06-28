@@ -8,6 +8,7 @@ import '../../models/study_record.dart';
 import '../../models/study_subject.dart';
 import '../../state/study_providers.dart';
 import '../../utils/time_format.dart';
+import '../shared/subject_picker_sheet.dart';
 
 const _presetSeconds = [5 * 60, 10 * 60, 25 * 60, 50 * 60];
 const _breakPresetSeconds = [60, 5 * 60, 10 * 60];
@@ -20,8 +21,12 @@ class FocusTab extends ConsumerWidget {
     final focus = ref.watch(focusControllerProvider);
     final settings = ref.watch(settingsControllerProvider);
     final subjects = ref.watch(subjectsProvider);
+    final activeSubjects = ref.watch(activeSubjectsProvider);
     final todayTotalSeconds = ref.watch(todayTotalSecondsProvider);
-    final selectedSubject = _subjectById(subjects, focus.selectedSubjectId);
+    final selectedSubject = _subjectById(
+      activeSubjects,
+      focus.selectedSubjectId,
+    );
 
     return CupertinoPageScaffold(
       navigationBar: _navigationBar(context, '集中'),
@@ -53,7 +58,11 @@ class FocusTab extends ConsumerWidget {
                 ),
               )
             else
-              _ReadySessionView(subject: selectedSubject, subjects: subjects),
+              _ReadySessionView(
+                subject: selectedSubject,
+                subjects: activeSubjects,
+                selectedSubjectId: selectedSubject.id,
+              ),
           ],
         ),
       ),
@@ -92,10 +101,15 @@ class _TodaySummary extends StatelessWidget {
 }
 
 class _ReadySessionView extends ConsumerWidget {
-  const _ReadySessionView({required this.subject, required this.subjects});
+  const _ReadySessionView({
+    required this.subject,
+    required this.subjects,
+    required this.selectedSubjectId,
+  });
 
   final StudySubject subject;
   final List<StudySubject> subjects;
+  final String selectedSubjectId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -106,7 +120,12 @@ class _ReadySessionView extends ConsumerWidget {
       children: [
         _SubjectButton(
           subject: subject,
-          onPressed: () => _showSubjectPicker(context, subjects, controller),
+          onPressed: () => showSubjectPickerSheet(
+            context: context,
+            subjects: subjects,
+            selectedSubjectId: selectedSubjectId,
+            onSelected: controller.selectSubject,
+          ),
         ),
         const SizedBox(height: 48),
         _TimeDisplay(seconds: focus.selectedPresetSeconds),
@@ -532,35 +551,6 @@ class _SubjectDot extends StatelessWidget {
       ),
     );
   }
-}
-
-Future<void> _showSubjectPicker(
-  BuildContext context,
-  List<StudySubject> subjects,
-  FocusController controller,
-) async {
-  await showCupertinoModalPopup<void>(
-    context: context,
-    builder: (context) {
-      return CupertinoActionSheet(
-        title: const Text('科目'),
-        actions: [
-          for (final subject in subjects)
-            CupertinoActionSheetAction(
-              onPressed: () {
-                Navigator.of(context).pop();
-                controller.selectSubject(subject.id);
-              },
-              child: Text(subject.name),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('キャンセル'),
-        ),
-      );
-    },
-  );
 }
 
 CupertinoNavigationBar _navigationBar(BuildContext context, String title) {
