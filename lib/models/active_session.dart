@@ -126,4 +126,73 @@ class ActiveSession {
           : completedAt as DateTime?,
     );
   }
+
+  Map<String, Object?> toJson() {
+    return {
+      'id': id,
+      'subjectId': subjectId,
+      'kind': kind.name,
+      'mode': mode.name,
+      'status': status.name,
+      'targetSeconds': targetSeconds,
+      'startedAt': startedAt.toIso8601String(),
+      'runStartedAt': runStartedAt?.toIso8601String(),
+      'elapsedBeforeCurrentRunSeconds': elapsedBeforeCurrentRunSeconds,
+      'expectedEndAt': expectedEndAt?.toIso8601String(),
+      'pausedAt': pausedAt?.toIso8601String(),
+      'completedAt': completedAt?.toIso8601String(),
+    };
+  }
+
+  factory ActiveSession.fromJson(Map<String, Object?> json) {
+    return ActiveSession(
+      id: json['id'] as String,
+      subjectId: json['subjectId'] as String,
+      kind: _sessionKindFromName(json['kind'] as String?),
+      mode: _sessionModeFromName(json['mode'] as String?),
+      status: _sessionStatusFromName(json['status'] as String?),
+      targetSeconds: json['targetSeconds'] as int,
+      startedAt: DateTime.parse(json['startedAt'] as String),
+      runStartedAt: _dateTimeFromJson(json['runStartedAt']),
+      elapsedBeforeCurrentRunSeconds:
+          json['elapsedBeforeCurrentRunSeconds'] as int,
+      expectedEndAt: _dateTimeFromJson(json['expectedEndAt']),
+      pausedAt: _dateTimeFromJson(json['pausedAt']),
+      completedAt: _dateTimeFromJson(json['completedAt']),
+    );
+  }
+}
+
+DateTime? _dateTimeFromJson(Object? value) {
+  if (value is! String || value.isEmpty) {
+    return null;
+  }
+  return DateTime.parse(value);
+}
+
+StudySessionKind _sessionKindFromName(String? name) {
+  for (final kind in StudySessionKind.values) {
+    if (kind.name == name) {
+      return kind;
+    }
+  }
+  return StudySessionKind.focus;
+}
+
+StudySessionMode _sessionModeFromName(String? name) {
+  for (final mode in StudySessionMode.values) {
+    if (mode.name == name) {
+      return mode;
+    }
+  }
+  return StudySessionMode.timer;
+}
+
+StudySessionStatus _sessionStatusFromName(String? name) {
+  for (final status in StudySessionStatus.values) {
+    if (status.name == name) {
+      return status;
+    }
+  }
+  return StudySessionStatus.running;
 }

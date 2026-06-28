@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +21,7 @@ class SettingsTab extends ConsumerWidget {
     );
     final subjects = ref.watch(subjectsProvider);
     final controller = ref.read(settingsControllerProvider.notifier);
+    final focusController = ref.read(focusControllerProvider.notifier);
     final notificationController = ref.read(
       notificationPermissionControllerProvider.notifier,
     );
@@ -60,6 +62,11 @@ class SettingsTab extends ConsumerWidget {
                   value: settings.themeMode.label,
                   onPressed: () => _showThemePicker(context, controller),
                 ),
+                _SettingsToggleRow(
+                  title: '画面を暗くしない',
+                  value: settings.keepScreenAwake,
+                  onChanged: controller.setKeepScreenAwake,
+                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -73,6 +80,24 @@ class SettingsTab extends ConsumerWidget {
                 ),
               ],
             ),
+            if (kDebugMode) ...[
+              const SizedBox(height: 24),
+              _SettingsSection(
+                title: '開発',
+                children: [
+                  _SettingsPickerRow(
+                    title: '10秒集中',
+                    value: '開始',
+                    onPressed: focusController.startDebugFocus,
+                  ),
+                  _SettingsPickerRow(
+                    title: '10秒休憩',
+                    value: '開始',
+                    onPressed: focusController.startDebugBreak,
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

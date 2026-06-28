@@ -13,6 +13,7 @@ import '../models/study_subject.dart';
 import '../repositories/study_data_repository.dart';
 import '../services/haptic_service.dart';
 import '../services/notification_service.dart';
+import '../services/wake_lock_service.dart';
 
 const _uuid = Uuid();
 const _subjectColorPalette = [
@@ -43,6 +44,10 @@ final hapticServiceProvider = Provider<HapticService>((ref) {
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return LocalNotificationService();
+});
+
+final wakeLockServiceProvider = Provider<WakeLockService>((ref) {
+  return const SystemWakeLockService();
 });
 
 final notificationPermissionControllerProvider =
@@ -201,6 +206,11 @@ class SettingsController extends Notifier<AppSettings> {
     state = state.copyWith(themeMode: mode);
     unawaited(_save());
   }
+
+  void setKeepScreenAwake(bool enabled) {
+    state = state.copyWith(keepScreenAwake: enabled);
+    unawaited(_save());
+  }
 }
 
 final recordsControllerProvider =
@@ -209,17 +219,25 @@ final recordsControllerProvider =
     );
 
 class RecordsController extends Notifier<List<StudyRecord>> {
+  Future<void>? _loadFuture;
+
   @override
   List<StudyRecord> build() {
-    unawaited(_load());
+    _loadFuture = _load();
+    unawaited(_loadFuture);
     return const [];
   }
 
   Future<void> _load() async {
-    final records = [
-      ...await ref.read(studyDataRepositoryProvider).loadRecords(),
-    ]..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-    state = records;
+    final records = await ref.read(studyDataRepositoryProvider).loadRecords();
+    if (!ref.mounted) {
+      return;
+    }
+    state = _sortedUniqueRecords([...records, ...state]);
+  }
+
+  Future<void> ensureLoaded() async {
+    await _loadFuture;
   }
 
   Future<void> _save() async {
@@ -227,9 +245,11 @@ class RecordsController extends Notifier<List<StudyRecord>> {
   }
 
   void addRecord(StudyRecord record) {
-    final records = [...state, record]
-      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-    state = records;
+    if (state.any((existingRecord) => existingRecord.id == record.id)) {
+      return;
+    }
+
+    state = _sortedUniqueRecords([...state, record]);
     unawaited(_save());
   }
 
@@ -396,10 +416,19 @@ class FocusState {
 
 class FocusController extends Notifier<FocusState> {
   Timer? _ticker;
+  Future<void> _sessionPersistenceQueue = Future<void>.value();
 
   @override
   FocusState build() {
-    ref.onDispose(() => _ticker?.cancel());
+    final wakeLockService = ref.read(wakeLockServiceProvider);
+    ref.onDispose(() {
+      _ticker?.cancel();
+      unawaited(wakeLockService.disable());
+    });
+    ref.listen(settingsControllerProvider, (_, _) {
+      unawaited(_syncWakeLockForState());
+    });
+    unawaited(_restoreActiveSession());
     final firstSubject = ref.read(subjectsProvider).first;
     return FocusState(
       selectedSubjectId: firstSubject.id,
@@ -460,8 +489,10 @@ class FocusController extends Notifier<FocusState> {
       clearCompletedRecord: true,
       clearCompletedBreak: true,
     );
+    _persistActiveSession(session);
     _startTicker();
     unawaited(_scheduleSessionNotification(session));
+    unawaited(_syncWakeLockForState());
   }
 
   void startBreak() {
@@ -486,8 +517,10 @@ class FocusController extends Notifier<FocusState> {
       clearCompletedRecord: true,
       clearCompletedBreak: true,
     );
+    _persistActiveSession(session);
     _startTicker();
     unawaited(_scheduleSessionNotification(session));
+    unawaited(_syncWakeLockForState());
   }
 
   void pause() {
@@ -518,7 +551,9 @@ class FocusController extends Notifier<FocusState> {
       ),
     );
     _ticker?.cancel();
+    _persistActiveSession(state.activeSession);
     unawaited(_cancelSessionNotification());
+    unawaited(_syncWakeLockForState());
   }
 
   void resume() {
@@ -544,8 +579,10 @@ class FocusController extends Notifier<FocusState> {
         pausedAt: null,
       ),
     );
+    _persistActiveSession(state.activeSession);
     _startTicker();
     unawaited(_scheduleCurrentSessionNotification());
+    unawaited(_syncWakeLockForState());
   }
 
   void finish() {
@@ -574,11 +611,33 @@ class FocusController extends Notifier<FocusState> {
     start();
   }
 
+  void startDebugFocus() {
+    if (state.activeSession != null) {
+      return;
+    }
+    state = state.copyWith(selectedPresetSeconds: 10);
+    start();
+  }
+
+  void startDebugBreak() {
+    if (state.activeSession != null) {
+      return;
+    }
+    state = state.copyWith(selectedBreakSeconds: 10);
+    startBreak();
+  }
+
+  void releaseScreenAwake() {
+    unawaited(ref.read(wakeLockServiceProvider).disable());
+  }
+
   void reconcileWithClock() {
     final session = state.activeSession;
     final now = DateTime.now();
     if (session == null) {
       state = state.copyWith(now: now);
+      unawaited(_cancelSessionNotification());
+      unawaited(_syncWakeLockForState());
       return;
     }
 
@@ -592,6 +651,107 @@ class FocusController extends Notifier<FocusState> {
     }
 
     state = state.copyWith(now: now);
+    if (session.status == StudySessionStatus.running) {
+      unawaited(
+        _scheduleSessionNotification(session, requestPermission: false),
+      );
+    } else {
+      unawaited(_cancelSessionNotification());
+    }
+    unawaited(_syncWakeLockForState());
+  }
+
+  Future<void> _restoreActiveSession() async {
+    final repository = ref.read(studyDataRepositoryProvider);
+    final session = await repository.loadActiveSession();
+    if (!ref.mounted) {
+      return;
+    }
+
+    if (state.activeSession != null) {
+      return;
+    }
+
+    if (session == null) {
+      unawaited(_cancelSessionNotification());
+      unawaited(_syncWakeLockForState());
+      return;
+    }
+
+    if (session.status == StudySessionStatus.completed) {
+      _persistActiveSession(null);
+      unawaited(_cancelSessionNotification());
+      unawaited(_syncWakeLockForState());
+      return;
+    }
+
+    await ref.read(recordsControllerProvider.notifier).ensureLoaded();
+    if (!ref.mounted) {
+      return;
+    }
+
+    final now = DateTime.now();
+    state = state.copyWith(
+      now: now,
+      selectedSubjectId: session.subjectId,
+      selectedPresetSeconds: session.kind == StudySessionKind.focus
+          ? session.targetSeconds
+          : state.selectedPresetSeconds,
+      selectedBreakSeconds: session.kind == StudySessionKind.rest
+          ? session.targetSeconds
+          : state.selectedBreakSeconds,
+      activeSession: session,
+      clearCompletedRecord: true,
+      clearCompletedBreak: true,
+    );
+
+    if (session.shouldComplete(now)) {
+      _completeSession(
+        now,
+        endedAt: session.expectedEndAt,
+        playCompletionHaptic: false,
+      );
+      return;
+    }
+
+    if (session.status == StudySessionStatus.running) {
+      _startTicker();
+      unawaited(
+        _scheduleSessionNotification(session, requestPermission: false),
+      );
+    } else {
+      _ticker?.cancel();
+      unawaited(_cancelSessionNotification());
+    }
+    unawaited(_syncWakeLockForState());
+  }
+
+  void _persistActiveSession(ActiveSession? session) {
+    final repository = ref.read(studyDataRepositoryProvider);
+    _sessionPersistenceQueue = _sessionPersistenceQueue
+        .catchError((Object _) {})
+        .then((_) async {
+          if (session == null) {
+            await repository.clearActiveSession();
+          } else {
+            await repository.saveActiveSession(session);
+          }
+        });
+  }
+
+  Future<void> _syncWakeLockForState() async {
+    final settings = ref.read(settingsControllerProvider);
+    final session = state.activeSession;
+    final shouldEnable =
+        settings.keepScreenAwake &&
+        session != null &&
+        session.status == StudySessionStatus.running;
+    final wakeLockService = ref.read(wakeLockServiceProvider);
+    if (shouldEnable) {
+      await wakeLockService.enable();
+    } else {
+      await wakeLockService.disable();
+    }
   }
 
   void _startTicker() {
@@ -644,16 +804,22 @@ class FocusController extends Notifier<FocusState> {
       return;
     }
 
-    final record = StudyRecord(
-      id: _uuid.v4(),
-      subjectId: session.subjectId,
-      startedAt: session.startedAt,
-      endedAt: completedAt,
-      durationSeconds: durationSeconds,
-      source: StudyRecordSource.timer,
-    );
-    ref.read(recordsControllerProvider.notifier).addRecord(record);
+    final existingRecord = _recordForSession(session.id);
+    final record =
+        existingRecord ??
+        StudyRecord(
+          id: session.id,
+          subjectId: session.subjectId,
+          startedAt: session.startedAt,
+          endedAt: completedAt,
+          durationSeconds: durationSeconds,
+          source: StudyRecordSource.timer,
+        );
+    if (existingRecord == null) {
+      ref.read(recordsControllerProvider.notifier).addRecord(record);
+    }
     _ticker?.cancel();
+    _persistActiveSession(null);
     unawaited(_cancelSessionNotification());
     state = state.copyWith(
       now: observedAt,
@@ -665,10 +831,20 @@ class FocusController extends Notifier<FocusState> {
       lastCompletedRecord: record,
       clearCompletedBreak: true,
     );
+    unawaited(_syncWakeLockForState());
 
     if (playCompletionHaptic) {
       _playCompletionHaptic();
     }
+  }
+
+  StudyRecord? _recordForSession(String sessionId) {
+    for (final record in ref.read(recordsControllerProvider)) {
+      if (record.id == sessionId) {
+        return record;
+      }
+    }
+    return null;
   }
 
   void _completeBreakSession({
@@ -679,6 +855,7 @@ class FocusController extends Notifier<FocusState> {
     required bool playCompletionHaptic,
   }) {
     _ticker?.cancel();
+    _persistActiveSession(null);
     unawaited(_cancelSessionNotification());
     state = state.copyWith(
       now: observedAt,
@@ -690,6 +867,7 @@ class FocusController extends Notifier<FocusState> {
       clearCompletedRecord: true,
       lastCompletedBreakSeconds: durationSeconds,
     );
+    unawaited(_syncWakeLockForState());
 
     if (playCompletionHaptic) {
       _playCompletionHaptic();
@@ -713,9 +891,15 @@ class FocusController extends Notifier<FocusState> {
     await _scheduleSessionNotification(session);
   }
 
-  Future<void> _scheduleSessionNotification(ActiveSession session) async {
+  Future<void> _scheduleSessionNotification(
+    ActiveSession session, {
+    bool requestPermission = true,
+  }) async {
     final notificationService = ref.read(notificationServiceProvider);
-    await notificationService.scheduleSessionEnd(session);
+    await notificationService.scheduleSessionEnd(
+      session,
+      requestPermission: requestPermission,
+    );
     if (!ref.mounted) {
       return;
     }
@@ -723,7 +907,7 @@ class FocusController extends Notifier<FocusState> {
   }
 
   Future<void> _cancelSessionNotification() async {
-    await ref.read(notificationServiceProvider).cancelSessionEnd();
+    await ref.read(notificationServiceProvider).cancelAllSessionEnds();
   }
 }
 
@@ -735,6 +919,15 @@ bool _isSameLocalDay(DateTime left, DateTime right) {
 
 DateTime _localDay(DateTime dateTime) {
   return DateTime(dateTime.year, dateTime.month, dateTime.day);
+}
+
+List<StudyRecord> _sortedUniqueRecords(List<StudyRecord> records) {
+  final recordsById = <String, StudyRecord>{};
+  for (final record in records) {
+    recordsById[record.id] = record;
+  }
+  return recordsById.values.toList()
+    ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
 }
 
 List<StudySubject> _sortedActiveSubjects(List<StudySubject> subjects) {

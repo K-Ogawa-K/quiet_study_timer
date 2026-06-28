@@ -29,21 +29,25 @@ class AppSettings {
     this.themeMode = ThemeMode.system,
     this.libraryModeEnabled = false,
     this.vibrationPattern = VibrationPattern.short,
+    this.keepScreenAwake = false,
   });
 
   final ThemeMode themeMode;
   final bool libraryModeEnabled;
   final VibrationPattern vibrationPattern;
+  final bool keepScreenAwake;
 
   AppSettings copyWith({
     ThemeMode? themeMode,
     bool? libraryModeEnabled,
     VibrationPattern? vibrationPattern,
+    bool? keepScreenAwake,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
       libraryModeEnabled: libraryModeEnabled ?? this.libraryModeEnabled,
       vibrationPattern: vibrationPattern ?? this.vibrationPattern,
+      keepScreenAwake: keepScreenAwake ?? this.keepScreenAwake,
     );
   }
 
@@ -52,6 +56,7 @@ class AppSettings {
       'themeMode': themeMode.name,
       'libraryModeEnabled': libraryModeEnabled,
       'vibrationPattern': vibrationPattern.name,
+      'keepScreenAwake': keepScreenAwake,
     };
   }
 
@@ -62,6 +67,7 @@ class AppSettings {
       vibrationPattern: _vibrationPatternFromName(
         json['vibrationPattern'] as String?,
       ),
+      keepScreenAwake: json['keepScreenAwake'] as bool? ?? false,
     );
   }
 }

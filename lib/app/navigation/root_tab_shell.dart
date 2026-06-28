@@ -34,6 +34,13 @@ class _RootTabShellState extends ConsumerState<RootTabShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(focusControllerProvider.notifier).reconcileWithClock();
+      return;
+    }
+
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      ref.read(focusControllerProvider.notifier).releaseScreenAwake();
     }
   }
 

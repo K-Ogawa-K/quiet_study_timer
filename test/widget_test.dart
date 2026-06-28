@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:quiet_study_timer/app/quiet_study_app.dart';
+import 'package:quiet_study_timer/models/active_session.dart';
 import 'package:quiet_study_timer/models/app_settings.dart';
+import 'package:quiet_study_timer/services/wake_lock_service.dart';
 import 'package:quiet_study_timer/state/study_providers.dart';
 
 void main() {
@@ -289,4 +293,185 @@ void main() {
       VibrationPattern.none,
     );
   });
+
+  test('active focus session restores after app restart', () async {
+    final firstContainer = ProviderContainer();
+    firstContainer.read(focusControllerProvider.notifier).start();
+
+    final firstSession = firstContainer
+        .read(focusControllerProvider)
+        .activeSession;
+    var savedSession = await firstContainer
+        .read(studyDataRepositoryProvider)
+        .loadActiveSession();
+    for (var index = 0; index < 5 && savedSession == null; index += 1) {
+      await Future<void>.delayed(Duration.zero);
+      savedSession = await firstContainer
+          .read(studyDataRepositoryProvider)
+          .loadActiveSession();
+    }
+    expect(savedSession?.id, firstSession?.id);
+    firstContainer.dispose();
+
+    final secondContainer = ProviderContainer();
+    addTearDown(secondContainer.dispose);
+    secondContainer.read(focusControllerProvider);
+
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    final restoredSession = secondContainer
+        .read(focusControllerProvider)
+        .activeSession;
+    expect(restoredSession?.id, firstSession?.id);
+    expect(restoredSession?.status, StudySessionStatus.running);
+  });
+
+  test('expired persisted focus session saves a record only once', () async {
+    final now = DateTime.now();
+    final startedAt = now.subtract(const Duration(minutes: 30));
+    final endedAt = now.subtract(const Duration(minutes: 5));
+    final session = ActiveSession(
+      id: 'persisted-focus-session',
+      subjectId: 'english',
+      kind: StudySessionKind.focus,
+      mode: StudySessionMode.timer,
+      status: StudySessionStatus.running,
+      targetSeconds: 25 * 60,
+      startedAt: startedAt,
+      runStartedAt: startedAt,
+      elapsedBeforeCurrentRunSeconds: 0,
+      expectedEndAt: endedAt,
+    );
+    SharedPreferences.setMockInitialValues({
+      'active_session_v1': jsonEncode(session.toJson()),
+    });
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(recordsControllerProvider);
+    container.read(focusControllerProvider);
+
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(container.read(focusControllerProvider).activeSession, isNull);
+    expect(container.read(recordsControllerProvider), hasLength(1));
+
+    container.read(focusControllerProvider.notifier).reconcileWithClock();
+    expect(container.read(recordsControllerProvider), hasLength(1));
+  });
+
+  test(
+    'expired persisted break session does not save a study record',
+    () async {
+      final now = DateTime.now();
+      final startedAt = now.subtract(const Duration(minutes: 2));
+      final endedAt = now.subtract(const Duration(minutes: 1));
+      final session = ActiveSession(
+        id: 'persisted-break-session',
+        subjectId: 'english',
+        kind: StudySessionKind.rest,
+        mode: StudySessionMode.timer,
+        status: StudySessionStatus.running,
+        targetSeconds: 60,
+        startedAt: startedAt,
+        runStartedAt: startedAt,
+        elapsedBeforeCurrentRunSeconds: 0,
+        expectedEndAt: endedAt,
+      );
+      SharedPreferences.setMockInitialValues({
+        'active_session_v1': jsonEncode(session.toJson()),
+      });
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(recordsControllerProvider);
+      container.read(focusControllerProvider);
+
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(recordsControllerProvider), isEmpty);
+      expect(
+        container.read(focusControllerProvider).lastCompletedBreakSeconds,
+        greaterThan(0),
+      );
+    },
+  );
+
+  test('cross-midnight records are counted on their start day', () async {
+    final now = DateTime.now();
+    final yesterday = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(const Duration(days: 1));
+    final startedAt = DateTime(
+      yesterday.year,
+      yesterday.month,
+      yesterday.day,
+      23,
+      50,
+    );
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container
+        .read(recordsControllerProvider.notifier)
+        .addManualRecord(
+          subjectId: 'english',
+          startedAt: startedAt,
+          endedAt: startedAt.add(const Duration(minutes: 30)),
+        );
+
+    expect(container.read(todayTotalSecondsProvider), 0);
+    expect(container.read(sevenDayAnalyticsProvider).totalSeconds, 30 * 60);
+  });
+
+  test('keep screen awake only follows running sessions', () async {
+    final wakeLock = _FakeWakeLockService();
+    final container = ProviderContainer(
+      overrides: [wakeLockServiceProvider.overrideWithValue(wakeLock)],
+    );
+    addTearDown(container.dispose);
+
+    container
+        .read(settingsControllerProvider.notifier)
+        .setKeepScreenAwake(true);
+    await Future<void>.delayed(Duration.zero);
+
+    final controller = container.read(focusControllerProvider.notifier);
+    controller.start();
+    await Future<void>.delayed(Duration.zero);
+    expect(wakeLock.enabled, isTrue);
+
+    controller.pause();
+    await Future<void>.delayed(Duration.zero);
+    expect(wakeLock.enabled, isFalse);
+
+    controller.resume();
+    await Future<void>.delayed(Duration.zero);
+    expect(wakeLock.enabled, isTrue);
+
+    controller.finish();
+    await Future<void>.delayed(Duration.zero);
+    expect(wakeLock.enabled, isFalse);
+  });
+}
+
+class _FakeWakeLockService implements WakeLockService {
+  var enabled = false;
+
+  @override
+  Future<void> enable() async {
+    enabled = true;
+  }
+
+  @override
+  Future<void> disable() async {
+    enabled = false;
+  }
 }

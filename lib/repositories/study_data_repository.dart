@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/active_session.dart';
 import '../models/app_settings.dart';
 import '../models/study_record.dart';
 import '../models/study_subject.dart';
@@ -18,9 +19,16 @@ abstract class StudyDataRepository {
   Future<AppSettings?> loadSettings();
 
   Future<void> saveSettings(AppSettings settings);
+
+  Future<ActiveSession?> loadActiveSession();
+
+  Future<void> saveActiveSession(ActiveSession session);
+
+  Future<void> clearActiveSession();
 }
 
 class SharedPreferencesStudyDataRepository implements StudyDataRepository {
+  static const _activeSessionStorageKey = 'active_session_v1';
   static const _recordsStorageKey = 'study_records_v1';
   static const _settingsStorageKey = 'app_settings_v1';
   static const _subjectsStorageKey = 'study_subjects_v1';
@@ -95,6 +103,32 @@ class SharedPreferencesStudyDataRepository implements StudyDataRepository {
   @override
   Future<void> saveSettings(AppSettings settings) async {
     await _writeJson(_settingsStorageKey, settings.toJson());
+  }
+
+  @override
+  Future<ActiveSession?> loadActiveSession() async {
+    final rawJson = await _readString(_activeSessionStorageKey);
+    if (rawJson == null) {
+      return null;
+    }
+
+    final decoded = jsonDecode(rawJson);
+    if (decoded is! Map) {
+      return null;
+    }
+
+    return ActiveSession.fromJson(Map<String, Object?>.from(decoded));
+  }
+
+  @override
+  Future<void> saveActiveSession(ActiveSession session) async {
+    await _writeJson(_activeSessionStorageKey, session.toJson());
+  }
+
+  @override
+  Future<void> clearActiveSession() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_activeSessionStorageKey);
   }
 
   Future<String?> _readString(String key) async {

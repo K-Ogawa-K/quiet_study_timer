@@ -30,16 +30,22 @@ abstract class NotificationService {
 
   Future<NotificationPermissionState> requestPermission();
 
-  Future<void> scheduleSessionEnd(ActiveSession session);
+  Future<void> scheduleSessionEnd(
+    ActiveSession session, {
+    bool requestPermission = true,
+  });
 
-  Future<void> cancelSessionEnd();
+  Future<void> cancelSessionEnd({StudySessionKind? kind});
+
+  Future<void> cancelAllSessionEnds();
 }
 
 class LocalNotificationService implements NotificationService {
   LocalNotificationService({FlutterLocalNotificationsPlugin? notifications})
     : _notifications = notifications ?? FlutterLocalNotificationsPlugin();
 
-  static const _sessionNotificationId = 1001;
+  static const _focusNotificationId = 1001;
+  static const _restNotificationId = 1002;
   static const _channelId = 'quiet_study_timer_session';
   static const _channelName = 'Timer';
   static const _channelDescription = 'Quiet timer completion notifications';
@@ -186,7 +192,10 @@ class LocalNotificationService implements NotificationService {
   }
 
   @override
-  Future<void> scheduleSessionEnd(ActiveSession session) async {
+  Future<void> scheduleSessionEnd(
+    ActiveSession session, {
+    bool requestPermission = true,
+  }) async {
     if (!_supportsLocalNotifications) {
       return;
     }
@@ -196,11 +205,18 @@ class LocalNotificationService implements NotificationService {
       return;
     }
 
-    await cancelSessionEnd();
+    if (requestPermission) {
+      await cancelAllSessionEnds();
+    }
 
-    final permission = await requestPermission();
+    final permission = requestPermission
+        ? await this.requestPermission()
+        : await permissionState();
     if (permission != NotificationPermissionState.granted) {
       return;
+    }
+    if (!requestPermission) {
+      await cancelAllSessionEnds();
     }
 
     final title = switch (session.kind) {
@@ -210,7 +226,7 @@ class LocalNotificationService implements NotificationService {
 
     try {
       await _notifications.zonedSchedule(
-        id: _sessionNotificationId,
+        id: _notificationIdForKind(session.kind),
         title: title,
         body: '',
         scheduledDate: tz.TZDateTime.from(expectedEndAt, tz.local),
@@ -250,14 +266,18 @@ class LocalNotificationService implements NotificationService {
   }
 
   @override
-  Future<void> cancelSessionEnd() async {
+  Future<void> cancelSessionEnd({StudySessionKind? kind}) async {
     if (!_supportsLocalNotifications) {
       return;
     }
 
     await initialize();
     try {
-      await _notifications.cancel(id: _sessionNotificationId);
+      if (kind == null) {
+        await cancelAllSessionEnds();
+        return;
+      }
+      await _notifications.cancel(id: _notificationIdForKind(kind));
     } on MissingPluginException {
       return;
     } on PlatformException {
@@ -269,6 +289,35 @@ class LocalNotificationService implements NotificationService {
       return;
     }
   }
+
+  @override
+  Future<void> cancelAllSessionEnds() async {
+    if (!_supportsLocalNotifications) {
+      return;
+    }
+
+    await initialize();
+    try {
+      await _notifications.cancel(id: _focusNotificationId);
+      await _notifications.cancel(id: _restNotificationId);
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    } on Error catch (error) {
+      if (!_isUninitializedPluginError(error)) {
+        rethrow;
+      }
+      return;
+    }
+  }
+}
+
+int _notificationIdForKind(StudySessionKind kind) {
+  return switch (kind) {
+    StudySessionKind.focus => LocalNotificationService._focusNotificationId,
+    StudySessionKind.rest => LocalNotificationService._restNotificationId,
+  };
 }
 
 bool get _supportsLocalNotifications {
