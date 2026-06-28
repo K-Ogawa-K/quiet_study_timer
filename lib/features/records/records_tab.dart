@@ -22,7 +22,7 @@ class RecordsTab extends ConsumerWidget {
       navigationBar: _navigationBar(context),
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
           children: [
             if (groups.isEmpty)
               const _EmptyRecords()
@@ -58,7 +58,7 @@ class _DailyRecordSection extends ConsumerWidget {
             children: [
               Text(
                 formatRecordSectionTitle(group.date, now),
-                style: theme.textTheme.titleLarge,
+                style: theme.textTheme.titleMedium,
               ),
               const Spacer(),
               Text(
@@ -71,7 +71,7 @@ class _DailyRecordSection extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Container(
           decoration: _surfaceDecoration(theme),
           child: Column(
@@ -169,14 +169,20 @@ class _EmptyRecords extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 30),
       decoration: _surfaceDecoration(theme),
-      child: Text(
-        'まだ記録がありません',
-        textAlign: TextAlign.center,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+      child: Column(
+        children: [
+          Text('記録はまだありません', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            '右上の + から追加できます',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -252,129 +258,149 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
       color: Colors.transparent,
       child: SafeArea(
         top: false,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-          decoration: BoxDecoration(
-            color: theme.scaffoldBackgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.88,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _SheetHandle(color: theme.dividerColor),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
-                      'キャンセル',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    _isEditing ? '記録を編集' : '記録を追加',
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  const Spacer(),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    onPressed: _canSave ? _save : null,
-                    child: Text(
-                      '保存',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: _canSave
-                            ? AppTheme.accentBlue
-                            : theme.colorScheme.onSurfaceVariant,
-                        fontWeight: _canSave
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                ],
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+            decoration: BoxDecoration(
+              color: theme.scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
               ),
-              const SizedBox(height: 16),
-              Container(
-                decoration: _surfaceDecoration(theme),
-                child: Column(
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _SheetHandle(color: theme.dividerColor),
+                const SizedBox(height: 8),
+                Row(
                   children: [
-                    _FormValueRow(
-                      title: '科目',
-                      value: subject.name,
-                      leading: _SubjectDot(subject: subject),
-                      onPressed: () => showSubjectPickerSheet(
-                        context: context,
-                        subjects: activeSubjects,
-                        selectedSubjectId: _subjectId,
-                        onSelected: _setSubject,
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        'キャンセル',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                    _DividerInset(color: theme.dividerColor),
-                    _FormValueRow(
-                      title: '日付',
-                      value: formatFormDate(_date),
-                      onPressed: () => _showDatePickerSheet(
-                        context: context,
-                        initialDate: _date,
-                        onSelected: _setDate,
-                      ),
+                    const Spacer(),
+                    Text(
+                      _isEditing ? '記録を編集' : '記録を追加',
+                      style: theme.textTheme.titleMedium,
                     ),
-                    _DividerInset(color: theme.dividerColor),
-                    _FormValueRow(
-                      title: '開始時刻',
-                      value: formatClock(_startedAt),
-                      onPressed: () => _showTimePickerSheet(
-                        context: context,
-                        initialTime: _startedAt,
-                        onSelected: _setStartTime,
-                      ),
-                    ),
-                    _DividerInset(color: theme.dividerColor),
-                    _FormValueRow(
-                      title: '終了時刻',
-                      value: formatClock(_endedAt),
-                      onPressed: () => _showTimePickerSheet(
-                        context: context,
-                        initialTime: _endedAt,
-                        onSelected: _setEndTime,
+                    const Spacer(),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      onPressed: _canSave ? _save : null,
+                      child: Text(
+                        '保存',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: _canSave
+                              ? AppTheme.accentBlue
+                              : theme.colorScheme.onSurfaceVariant,
+                          fontWeight: _canSave
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              if (!_isTimeRangeValid) ...[
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '終了は開始より後にしてください',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: CupertinoColors.systemRed.resolveFrom(context),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          decoration: _surfaceDecoration(theme),
+                          child: Column(
+                            children: [
+                              _FormValueRow(
+                                title: '科目',
+                                value: subject.name,
+                                leading: _SubjectDot(subject: subject),
+                                onPressed: () => showSubjectPickerSheet(
+                                  context: context,
+                                  subjects: activeSubjects,
+                                  selectedSubjectId: _subjectId,
+                                  onSelected: _setSubject,
+                                ),
+                              ),
+                              _DividerInset(color: theme.dividerColor),
+                              _FormValueRow(
+                                title: '日付',
+                                value: formatFormDate(_date),
+                                onPressed: () => _showDatePickerSheet(
+                                  context: context,
+                                  initialDate: _date,
+                                  onSelected: _setDate,
+                                ),
+                              ),
+                              _DividerInset(color: theme.dividerColor),
+                              _FormValueRow(
+                                title: '開始時刻',
+                                value: formatClock(_startedAt),
+                                onPressed: () => _showTimePickerSheet(
+                                  context: context,
+                                  initialTime: _startedAt,
+                                  onSelected: _setStartTime,
+                                ),
+                              ),
+                              _DividerInset(color: theme.dividerColor),
+                              _FormValueRow(
+                                title: '終了時刻',
+                                value: formatClock(_endedAt),
+                                onPressed: () => _showTimePickerSheet(
+                                  context: context,
+                                  initialTime: _endedAt,
+                                  onSelected: _setEndTime,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!_isTimeRangeValid) ...[
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '終了は開始より後に',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: CupertinoColors.systemRed.resolveFrom(
+                                  context,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (_isEditing) ...[
+                          const SizedBox(height: 18),
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: _confirmDelete,
+                            child: Text(
+                              '削除',
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                color: CupertinoColors.systemRed.resolveFrom(
+                                  context,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
               ],
-              if (_isEditing) ...[
-                const SizedBox(height: 18),
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  onPressed: _confirmDelete,
-                  child: Text(
-                    '削除',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: CupertinoColors.systemRed.resolveFrom(context),
-                    ),
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),
@@ -443,7 +469,7 @@ class _RecordFormSheetState extends ConsumerState<_RecordFormSheet> {
       builder: (dialogContext) {
         return CupertinoAlertDialog(
           title: const Text('記録を削除'),
-          content: const Text('削除しますか。'),
+          content: const Text('元に戻せません。'),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.of(dialogContext).pop(),

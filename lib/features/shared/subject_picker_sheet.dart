@@ -18,59 +18,69 @@ Future<void> showSubjectPickerSheet({
         color: Colors.transparent,
         child: SafeArea(
           top: false,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-            decoration: BoxDecoration(
-              color: theme.scaffoldBackgroundColor,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.72,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _SheetHandle(color: theme.dividerColor),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Spacer(),
-                    Text('科目', style: theme.textTheme.titleMedium),
-                    const Spacer(),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('完了'),
-                    ),
-                  ],
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
                 ),
-                const SizedBox(height: 14),
-                Container(
-                  decoration: _surfaceDecoration(theme),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _SheetHandle(color: theme.dividerColor),
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      for (final (index, subject) in subjects.indexed) ...[
-                        _SubjectPickerRow(
-                          subject: subject,
-                          selected: subject.id == selectedSubjectId,
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            onSelected(subject.id);
-                          },
-                        ),
-                        if (index != subjects.length - 1)
-                          Divider(
-                            height: 1,
-                            thickness: 1,
-                            indent: 42,
-                            color: theme.dividerColor,
-                          ),
-                      ],
+                      const Spacer(),
+                      Text('科目', style: theme.textTheme.titleMedium),
+                      const Spacer(),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('完了'),
+                      ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Container(
+                        decoration: _surfaceDecoration(theme),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final (index, subject)
+                                in subjects.indexed) ...[
+                              _SubjectPickerRow(
+                                subject: subject,
+                                selected: subject.id == selectedSubjectId,
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  onSelected(subject.id);
+                                },
+                              ),
+                              if (index != subjects.length - 1)
+                                Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  indent: 42,
+                                  color: theme.dividerColor,
+                                ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

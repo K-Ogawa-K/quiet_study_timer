@@ -22,7 +22,7 @@ class AnalyticsTab extends ConsumerWidget {
       navigationBar: _navigationBar(context, '分析'),
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
           children: [
             _SummaryCard(totalSeconds: analytics.totalSeconds),
             const SizedBox(height: 18),
@@ -53,7 +53,7 @@ class _SummaryCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: _surfaceDecoration(theme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,7 +64,7 @@ class _SummaryCard extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             formatDurationCompact(totalSeconds),
             style: theme.textTheme.titleLarge,
@@ -96,9 +96,9 @@ class _SevenDayBars extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('日別', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           SizedBox(
-            height: 124,
+            height: 118,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -136,7 +136,7 @@ class _DayBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fraction = maxSeconds == 0 ? 0.0 : day.totalSeconds / maxSeconds;
-    final barHeight = day.totalSeconds == 0 ? 2.0 : max(8.0, 84.0 * fraction);
+    final barHeight = day.totalSeconds == 0 ? 2.0 : max(12.0, 82.0 * fraction);
     final barColor = isToday
         ? AppTheme.accentBlue
         : AppTheme.accentBlue.withValues(alpha: 0.42);
@@ -145,7 +145,7 @@ class _DayBar extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         SizedBox(
-          height: 88,
+          height: 86,
           child: Align(
             alignment: Alignment.bottomCenter,
             child: Container(
@@ -199,12 +199,23 @@ class _SubjectBreakdown extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text('科目別', style: theme.textTheme.titleMedium),
           ),
-          for (final entry in rows)
-            _BreakdownRow(
-              subject: _subjectById(subjects, entry.key),
-              seconds: entry.value,
-              fraction: totalSeconds == 0 ? 0 : entry.value / totalSeconds,
-            ),
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Text(
+                '内訳はまだありません',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            for (final entry in rows)
+              _BreakdownRow(
+                subject: _subjectById(subjects, entry.key),
+                seconds: entry.value,
+                fraction: totalSeconds == 0 ? 0 : entry.value / totalSeconds,
+              ),
         ],
       ),
     );
@@ -243,7 +254,12 @@ class _BreakdownRow extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(subject.name, style: theme.textTheme.bodyMedium),
+                child: Text(
+                  subject.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
               ),
               Text(
                 formatDurationCompact(seconds),
@@ -280,14 +296,20 @@ class _EmptyAnalyticsCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 30),
       decoration: _surfaceDecoration(theme),
-      child: Text(
-        '記録がありません',
-        textAlign: TextAlign.center,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+      child: Column(
+        children: [
+          Text('記録はまだありません', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            '集中すると7日間が見えます',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }

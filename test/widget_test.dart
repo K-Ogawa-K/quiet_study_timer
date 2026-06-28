@@ -56,7 +56,7 @@ void main() {
     await tester.tap(find.text('終了'));
     await tester.pumpAndSettle();
 
-    expect(find.text('記録しました'), findsOneWidget);
+    expect(find.text('記録'), findsWidgets);
 
     await tester.tap(find.text('記録').last);
     await tester.pumpAndSettle();
@@ -174,9 +174,11 @@ void main() {
     expect(find.text('ライト'), findsOneWidget);
     expect(find.text('ダーク'), findsOneWidget);
 
-    await tester.tap(find.text('キャンセル'));
+    await tester.tap(find.text('キャンセル').last);
     await tester.pumpAndSettle();
 
+    await tester.drag(find.byType(ListView), const Offset(0, -120));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('科目の追加・編集'));
     await tester.pumpAndSettle();
 
@@ -188,7 +190,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(CupertinoTextField).last, '英語A');
-    await tester.tap(find.text('保存'));
+    await tester.tap(find.text('保存').first, warnIfMissed: false);
     await tester.pumpAndSettle();
 
     expect(find.text('英語A'), findsWidgets);

@@ -45,22 +45,17 @@ class SettingsTab extends ConsumerWidget {
                   value: settings.vibrationPattern.label,
                   onPressed: () => _showVibrationPicker(context, controller),
                 ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            _SettingsSection(
+              title: 'タイマー',
+              children: [
                 _SettingsPickerRow(
                   title: 'タイマー通知',
                   value: notificationPermission.label,
                   subtitle: _notificationSubtitle(notificationPermission),
                   onPressed: notificationController.requestPermission,
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _SettingsSection(
-              title: '表示',
-              children: [
-                _SettingsPickerRow(
-                  title: 'テーマ',
-                  value: settings.themeMode.label,
-                  onPressed: () => _showThemePicker(context, controller),
                 ),
                 _SettingsToggleRow(
                   title: '画面を暗くしない',
@@ -69,7 +64,18 @@ class SettingsTab extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
+            _SettingsSection(
+              title: '表示',
+              children: [
+                _SettingsPickerRow(
+                  title: 'テーマ',
+                  value: settings.themeMode.label,
+                  onPressed: () => _showThemePicker(context, controller),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
             _SettingsSection(
               title: '科目',
               children: [
@@ -80,10 +86,15 @@ class SettingsTab extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 22),
+            const _SettingsSection(
+              title: 'データ',
+              children: [_SettingsInfoRow(title: '保存', value: '端末内')],
+            ),
             if (kDebugMode) ...[
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
               _SettingsSection(
-                title: '開発',
+                title: '開発用',
                 children: [
                   _SettingsPickerRow(
                     title: '10秒集中',
@@ -163,7 +174,7 @@ class _SettingsToggleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
       child: Row(
         children: [
           Expanded(child: Text(title, style: theme.textTheme.bodyLarge)),
@@ -218,6 +229,8 @@ class _SettingsPickerRow extends StatelessWidget {
             const SizedBox(width: 12),
             Text(
               value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -230,6 +243,32 @@ class _SettingsPickerRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SettingsInfoRow extends StatelessWidget {
+  const _SettingsInfoRow({required this.title, required this.value});
+
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      child: Row(
+        children: [
+          Expanded(child: Text(title, style: theme.textTheme.bodyLarge)),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -816,8 +855,8 @@ class _SheetHandle extends StatelessWidget {
 
 String? _notificationSubtitle(NotificationPermissionState state) {
   return switch (state) {
-    NotificationPermissionState.denied => 'アプリ内の表示と振動は使えます',
-    NotificationPermissionState.unsupported => 'この端末では使えません',
+    NotificationPermissionState.denied => '通知なしでも動きます',
+    NotificationPermissionState.unsupported => 'この端末では未対応',
     _ => null,
   };
 }

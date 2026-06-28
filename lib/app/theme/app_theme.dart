@@ -82,39 +82,45 @@ class AppTheme {
     return TextTheme(
       headlineLarge: TextStyle(
         color: textColor,
-        fontSize: 56,
+        fontSize: 54,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
+        height: 1.05,
       ),
       titleLarge: TextStyle(
         color: textColor,
-        fontSize: 24,
+        fontSize: 22,
         fontWeight: FontWeight.w700,
         letterSpacing: 0,
+        height: 1.18,
       ),
       titleMedium: TextStyle(
         color: textColor,
         fontSize: 17,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
+        height: 1.24,
       ),
       bodyLarge: TextStyle(
         color: textColor,
         fontSize: 17,
         fontWeight: FontWeight.w400,
         letterSpacing: 0,
+        height: 1.28,
       ),
       bodyMedium: TextStyle(
         color: textColor,
         fontSize: 15,
         fontWeight: FontWeight.w400,
         letterSpacing: 0,
+        height: 1.3,
       ),
       labelMedium: TextStyle(
         color: textColor,
         fontSize: 13,
         fontWeight: FontWeight.w500,
         letterSpacing: 0,
+        height: 1.25,
       ),
     );
   }

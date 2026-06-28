@@ -32,10 +32,10 @@ class FocusTab extends ConsumerWidget {
       navigationBar: _navigationBar(context, '集中'),
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
           children: [
             _TodaySummary(totalSeconds: todayTotalSeconds),
-            const SizedBox(height: 28),
+            const SizedBox(height: 26),
             if (focus.activeSession != null)
               _ActiveSessionView(
                 session: focus.activeSession!,
@@ -127,15 +127,15 @@ class _ReadySessionView extends ConsumerWidget {
             onSelected: controller.selectSubject,
           ),
         ),
-        const SizedBox(height: 48),
+        const SizedBox(height: 42),
         _TimeDisplay(seconds: focus.selectedPresetSeconds),
-        const SizedBox(height: 40),
+        const SizedBox(height: 36),
         _PresetRow(
           selectedSeconds: focus.selectedPresetSeconds,
           values: _presetSeconds,
           onSelected: controller.selectPreset,
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
         _PrimaryButton(label: '開始', onPressed: controller.start),
       ],
     );
@@ -164,16 +164,18 @@ class _ActiveSessionView extends ConsumerWidget {
     return Column(
       children: [
         _SessionLabel(title: title, label: statusLabel),
-        const SizedBox(height: 52),
+        const SizedBox(height: 46),
         _TimeDisplay(seconds: session.displaySeconds(now)),
-        const SizedBox(height: 44),
+        const SizedBox(height: 40),
         Row(
           children: [
             Expanded(
-              child: _SecondaryButton(
-                label: isPaused ? '再開' : '一時停止',
-                onPressed: isPaused ? controller.resume : controller.pause,
-              ),
+              child: isPaused
+                  ? _PrimaryButton(label: '再開', onPressed: controller.resume)
+                  : _SecondaryButton(
+                      label: '一時停止',
+                      onPressed: controller.pause,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -209,8 +211,8 @@ class _CompletedSessionView extends ConsumerWidget {
 
     return Column(
       children: [
-        _SessionLabel(title: subject.name, label: quiet ? '完了' : '記録しました'),
-        SizedBox(height: quiet ? 30 : 42),
+        _SessionLabel(title: subject.name, label: quiet ? '完了' : '記録'),
+        SizedBox(height: quiet ? 28 : 36),
         Text(
           formatDurationCompact(record.durationSeconds),
           style: quiet
@@ -224,24 +226,24 @@ class _CompletedSessionView extends ConsumerWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 34),
+        const SizedBox(height: 30),
         _PresetRow(
           selectedSeconds: selectedBreakSeconds,
           values: _breakPresetSeconds,
           onSelected: controller.selectBreakPreset,
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 20),
         Row(
           children: [
             Expanded(
-              child: _SecondaryButton(
+              child: _PrimaryButton(
                 label: '休憩する',
                 onPressed: controller.startBreak,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _PrimaryButton(
+              child: _SecondaryButton(
                 label: 'もう一度',
                 onPressed: controller.startAgain,
               ),
@@ -267,14 +269,14 @@ class _CompletedBreakView extends ConsumerWidget {
     return Column(
       children: [
         _SessionLabel(title: '休憩', label: quiet ? '完了' : '休憩完了'),
-        SizedBox(height: quiet ? 30 : 42),
+        SizedBox(height: quiet ? 28 : 36),
         Text(
           formatDurationCompact(seconds),
           style: quiet
               ? theme.textTheme.titleLarge
               : theme.textTheme.headlineLarge,
         ),
-        const SizedBox(height: 42),
+        const SizedBox(height: 36),
         Row(
           children: [
             Expanded(
@@ -308,8 +310,13 @@ class _SessionLabel extends StatelessWidget {
     final theme = Theme.of(context);
     return Column(
       children: [
-        Text(title, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleMedium,
+        ),
+        const SizedBox(height: 6),
         Text(
           label,
           style: theme.textTheme.bodyMedium?.copyWith(
@@ -342,7 +349,12 @@ class _SubjectButton extends StatelessWidget {
             _SubjectDot(subject: subject),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(subject.name, style: theme.textTheme.titleMedium),
+              child: Text(
+                subject.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium,
+              ),
             ),
             Icon(
               CupertinoIcons.chevron_down,
@@ -432,11 +444,13 @@ class _PresetButton extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected
-              ? AppTheme.accentBlue.withValues(alpha: 0.12)
+              ? AppTheme.accentBlue.withValues(alpha: 0.10)
               : theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: selected ? AppTheme.accentBlue : theme.dividerColor,
+            color: selected
+                ? AppTheme.accentBlue.withValues(alpha: 0.78)
+                : theme.dividerColor,
           ),
         ),
         child: Text(
@@ -464,7 +478,7 @@ class _PrimaryButton extends StatelessWidget {
     return CupertinoButton(
       color: AppTheme.accentBlue,
       borderRadius: BorderRadius.circular(8),
-      minimumSize: const Size(0, 54),
+      minimumSize: const Size(0, 52),
       onPressed: onPressed,
       child: Text(
         label,
@@ -490,16 +504,16 @@ class _SecondaryButton extends StatelessWidget {
     final theme = Theme.of(context);
     return CupertinoButton(
       padding: EdgeInsets.zero,
-      minimumSize: const Size(0, 54),
+      minimumSize: const Size(0, 52),
       onPressed: onPressed,
       child: Container(
-        height: 54,
+        height: 52,
         alignment: Alignment.center,
         decoration: _surfaceDecoration(theme),
         child: Text(
           label,
           style: theme.textTheme.titleMedium?.copyWith(
-            color: AppTheme.accentBlue,
+            color: theme.colorScheme.onSurface,
           ),
         ),
       ),
@@ -518,16 +532,18 @@ class _QuietDestructiveButton extends StatelessWidget {
     final theme = Theme.of(context);
     return CupertinoButton(
       padding: EdgeInsets.zero,
-      minimumSize: const Size(0, 54),
+      minimumSize: const Size(0, 52),
       onPressed: onPressed,
       child: Container(
-        height: 54,
+        height: 52,
         alignment: Alignment.center,
         decoration: _surfaceDecoration(theme),
         child: Text(
           label,
           style: theme.textTheme.titleMedium?.copyWith(
-            color: CupertinoColors.systemRed.resolveFrom(context),
+            color: CupertinoColors.systemRed
+                .resolveFrom(context)
+                .withValues(alpha: 0.78),
           ),
         ),
       ),
