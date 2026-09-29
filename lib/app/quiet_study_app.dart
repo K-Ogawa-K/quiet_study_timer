@@ -13,7 +13,7 @@ class QuietStudyApp extends ConsumerWidget {
     final settings = ref.watch(settingsControllerProvider);
 
     return MaterialApp(
-      title: 'Quiet Study Timer',
+      title: '勉強タイマー',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
