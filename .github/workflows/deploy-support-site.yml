@@ -1,0 +1,34 @@
+name: Deploy support site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "support_site/**"
+      - ".github/workflows/deploy-support-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Upload support site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: support_site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
